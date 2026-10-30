@@ -1,0 +1,1188 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="icon" type="image/png" href="../assets/favicon.png"><style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Gatecheck</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a meter bridge on its side. File + three gated readings on one shared LUFS ruler up top,
+   loudness timeline below, then the delivery decisions (specs, QC match, calibration, correction). */
+:root {
+  --bg: #e9ecef;
+  --panel: #fbfcfd;
+  --ink: #142029;
+  --muted: #56636e;
+  --rule: #cdd4da;
+  --track: #dde3e8;
+  --accent: #b86a00;       /* level-gated: meter amber */
+  --dlg: #0b7480;          /* dialogue-gated: teal */
+  --ungated: #6b5aa6;      /* ungated: violet */
+  --pass: #1d7f47; --fail: #b8322a; --warn: #9a6a00;
+  --pass-bg: #e0f0e6; --fail-bg: #f7e1df; --warn-bg: #f6ecd2;
+  --band: rgba(184,106,0,.14);
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1317; --panel: #151c22; --ink: #e3e9ee; --muted: #94a1ac; --rule: #2a343d; --track: #222c34;
+  --accent: #f0a23a; --dlg: #3fc3cf; --ungated: #a998e8;
+  --pass: #5cc98a; --fail: #ff8a7f; --warn: #e8bb52;
+  --pass-bg: #163325; --fail-bg: #3a1c1a; --warn-bg: #352a11; --band: rgba(240,162,58,.16);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e1317; --panel: #151c22; --ink: #e3e9ee; --muted: #94a1ac; --rule: #2a343d; --track: #222c34;
+  --accent: #f0a23a; --dlg: #3fc3cf; --ungated: #a998e8;
+  --pass: #5cc98a; --fail: #ff8a7f; --warn: #e8bb52;
+  --pass-bg: #163325; --fail-bg: #3a1c1a; --warn-bg: #352a11; --band: rgba(240,162,58,.16);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-block: 20px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 18px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+.num, .data { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* masthead */
+.mast { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+.mast h1 { font-size: 2.6rem; line-height: 1; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.mast h1 span { color: var(--accent); }
+.mast p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+.label { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .09em; font-size: .8rem; font-weight: 600; color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; min-width: 0; }
+.panel > h2 { font-size: 1.35rem; margin-bottom: 4px; }
+.panel > .sub { color: var(--muted); margin: 0 0 14px; font-size: .93rem; max-width: 70ch; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 18px; }
+.grid2b { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 860px) { .grid2, .grid2b { grid-template-columns: minmax(0, 1fr); } }
+
+/* drop zone */
+.drop { border: 1.5px dashed var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--accent); background: var(--band); }
+.drop strong { font-weight: 600; }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--panel); border-radius: 4px; padding: 7px 14px; cursor: pointer; font-weight: 600; font-size: .9rem; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:not(:disabled):hover { filter: brightness(1.12); }
+.btn.ghost:not(:disabled):hover { border-color: var(--ink); filter: none; }
+.fine { color: var(--muted); font-size: .84rem; }
+dl.meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 14px 0 0; font-size: .9rem; }
+dl.meta dt { color: var(--muted); }
+dl.meta dd { margin: 0; font-family: var(--font-data); font-size: .86rem; overflow-wrap: anywhere; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field select, .field input { border: 1px solid var(--rule); background: var(--bg); border-radius: 4px; padding: 6px 8px; width: 100%; min-width: 0; }
+.progress { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.example { display: inline-block; font-size: .75rem; font-family: var(--font-display); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--warn); color: var(--warn); padding: 1px 7px; border-radius: 3px; }
+details.howto { margin-top: 14px; font-size: .88rem; }
+details.howto summary { cursor: pointer; color: var(--muted); }
+pre.cmd { background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; padding: 8px 10px; overflow-x: auto; font-family: var(--font-data); font-size: .8rem; margin: 6px 0; white-space: pre; }
+
+/* meter bridge */
+.bridge { display: flex; flex-direction: column; gap: 10px; }
+.track { display: grid; grid-template-columns: minmax(0, 170px) minmax(0, 1fr) 92px; gap: 12px; align-items: center; }
+.track .name { line-height: 1.2; }
+.track .name b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: .02em; }
+.track .name small { color: var(--muted); font-size: .78rem; }
+.bar { position: relative; height: 26px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.bar .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+.bar .band { position: absolute; top: 0; bottom: 0; background: var(--band); border-left: 1px dashed var(--accent); border-right: 1px dashed var(--accent); }
+.bar .tgt { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: .55; }
+.track .val { font-family: var(--font-data); font-size: 1.25rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.track .val small { font-size: .7rem; color: var(--muted); font-weight: 400; }
+.ruler { position: relative; height: 22px; margin-left: calc(min(170px, 100%) + 12px); margin-right: 104px; font-family: var(--font-data); font-size: .7rem; color: var(--muted); }
+.ruler span { position: absolute; top: 4px; transform: translateX(-50%); }
+.ruler span::before { content: ""; position: absolute; top: -5px; left: 50%; width: 1px; height: 4px; background: var(--muted); }
+.callout { border-left: 3px solid var(--dlg); padding: 8px 12px; background: var(--bg); border-radius: 0 4px 4px 0; font-size: .93rem; max-width: 80ch; }
+.callout.ok { border-color: var(--pass); }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 22px; padding-top: 4px; }
+.stat { display: flex; flex-direction: column; }
+.stat b { font-family: var(--font-data); font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+  .track { grid-template-columns: minmax(0, 1fr) auto; }
+  .track .bar { grid-column: 1 / -1; grid-row: 2; }
+  .ruler { margin-left: 0; margin-right: 0; }
+}
+
+/* timeline */
+.tl-wrap { position: relative; }
+canvas#tl { width: 100%; height: 220px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .82rem; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 14px; height: 8px; margin-right: 6px; vertical-align: middle; border-radius: 1px; }
+
+/* tables */
+.tbl-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th { text-align: left; font-family: var(--font-display); text-transform: uppercase; letter-spacing: .07em; font-size: .76rem; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+td.n { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+th.n { text-align: right; }
+tr.sel td { background: var(--band); }
+tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.specname { font-weight: 600; }
+.specname small { display: block; font-weight: 400; color: var(--muted); font-size: .78rem; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+.pill.pass { background: var(--pass-bg); color: var(--pass); }
+.pill.fail { background: var(--fail-bg); color: var(--fail); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.mode { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mode i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.linkbtn { background: none; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px; font-size: .82rem; text-decoration: underline; }
+.addspec { display: grid; grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)) auto; gap: 10px; align-items: end; margin-top: 14px; }
+@media (max-width: 760px) { .addspec { grid-template-columns: repeat(2, minmax(0, 1fr)); } .addspec .field:first-child { grid-column: 1 / -1; } }
+
+/* QC match */
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.row .field { flex: 1 1 140px; }
+.matches { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.matches li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 4px; font-size: .9rem; }
+.matches li.best { border-color: var(--dlg); box-shadow: inset 3px 0 0 var(--dlg); }
+.matches input { margin: 0; }
+.verdict { margin-top: 12px; font-size: .93rem; }
+.empty { color: var(--muted); font-size: .9rem; padding: 10px 0; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 8px 16px; border-radius: 4px; font-size: .9rem; z-index: 20; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <h1><a href="../" id="home-link" style="color:inherit;text-decoration:none" hidden>Gate<span>check</span></a><span id="home-plain">Gate<span>check</span></span></h1>
+    <p>Loudness pre-flight for delivery QC. Measure a master every way a QC platform might, see where the readings split, and fix it before it bounces.</p>
+  </header>
+
+  <section class="grid2">
+    <div class="panel" id="input-panel">
+      <h2>Master</h2>
+      <div class="drop" id="drop">
+        <strong>Drop a WAV or BWF here</strong>
+        <span class="fine">PCM or float, mono to 16 channels, RF64 for files over 4 GB. FLAC, MP3, AAC and Ogg also open (decoded at 48 kHz). Audio stays in your browser.</span>
+        <div class="row">
+          <button class="btn" id="pick" type="button">Choose file</button>
+          <button class="btn ghost" id="demo" type="button">Load example</button>
+        </div>
+        <input type="file" id="file" accept=".wav,.bwf,.rf64,audio/*" hidden>
+      </div>
+      <div id="prog-wrap" hidden style="margin-top:12px">
+        <div class="progress"><i id="prog"></i></div>
+        <div class="fine" id="prog-text" style="margin-top:4px">Reading…</div>
+      </div>
+      <div id="err" class="callout" style="border-color:var(--fail);margin-top:12px" hidden></div>
+      <dl class="meta" id="meta"></dl>
+      <div class="field" style="margin-top:14px">
+        <label class="label" for="layout">Channel layout</label>
+        <select id="layout"></select>
+      </div>
+      <details class="howto">
+        <summary>Master in MXF or MOV?</summary>
+        <p style="margin:8px 0 0">Pull the mix out as a WAV with ffmpeg first. Interleaved audio track:</p>
+        <pre class="cmd">ffmpeg -i master.mxf -map 0:a:0 -c:a pcm_s24le mix.wav</pre>
+        <p style="margin:6px 0 0">Six mono tracks making up a 5.1 mix:</p>
+        <pre class="cmd">ffmpeg -i master.mxf -filter_complex "[0:a:0][0:a:1][0:a:2][0:a:3][0:a:4][0:a:5]amerge=inputs=6" -c:a pcm_s24le mix51.wav</pre>
+      </details>
+    </div>
+
+    <div class="panel" id="readings-panel">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <h2 style="font-size:1.35rem">Integrated loudness, three ways</h2>
+        <span id="example-tag" class="example" hidden>Example data</span>
+      </div>
+      <p class="sub">Same audio, same BS.1770 weighting. Only the gate changes, and the gate is what QC platforms disagree on. The shaded band is the target of the selected spec.</p>
+      <div class="bridge" id="bridge">
+        <div class="track" data-k="level">
+          <div class="name"><b style="color:var(--accent)">Level-gated</b><small>BS.1770-2 to -5 · EBU R128</small></div>
+          <div class="bar"><div class="fill" style="background:var(--accent)"></div><div class="band"></div><div class="tgt"></div></div>
+          <div class="val">—</div>
+        </div>
+        <div class="track" data-k="dialogue">
+          <div class="name"><b style="color:var(--dlg)">Dialogue-gated</b><small>Speech blocks only · approximate</small></div>
+          <div class="bar"><div class="fill" style="background:var(--dlg)"></div><div class="band"></div><div class="tgt"></div></div>
+          <div class="val">—</div>
+        </div>
+        <div class="track" data-k="ungated">
+          <div class="name"><b style="color:var(--ungated)">Ungated</b><small>BS.1770-1 · whole programme</small></div>
+          <div class="bar"><div class="fill" style="background:var(--ungated)"></div><div class="band"></div><div class="tgt"></div></div>
+          <div class="val">—</div>
+        </div>
+        <div class="ruler" id="ruler"></div>
+      </div>
+      <div class="callout" id="spread" style="margin-top:6px">Load a master to compare readings.</div>
+      <div class="stats" id="stats" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Short-term loudness</h2>
+    <p class="sub">3-second windows across the programme. Teal stretches are where the detector heard dialogue; those are the only parts a dialogue-gated measurement counts.</p>
+    <div class="tl-wrap"><canvas id="tl" aria-label="Short-term loudness over time"></canvas></div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>Short-term loudness</span>
+      <span><i style="background:var(--dlg);opacity:.35"></i>Dialogue detected</span>
+      <span><i style="background:var(--ink);opacity:.5;height:2px"></i>Selected spec target</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Delivery specs</h2>
+    <p class="sub">Each spec is checked with the gate it actually uses. Select one to drive the target band and the correction. Values are starting points; check them against the current delivery document and add your own.</p>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th></th><th>Spec</th><th>Gate</th><th class="n">Target</th><th class="n">Measured</th><th class="n">Off by</th><th class="n">True peak</th><th>Verdict</th><th class="n">Gain to target</th><th></th></tr></thead>
+        <tbody id="specs"></tbody>
+      </table>
+    </div>
+    <form class="addspec" id="addspec">
+      <div class="field"><label class="label" for="sp-name">New spec name</label><input id="sp-name" required placeholder="e.g. Broadcaster X, UK"></div>
+      <div class="field"><label class="label" for="sp-mode">Gate</label>
+        <select id="sp-mode"><option value="level">Level-gated</option><option value="dialogue">Dialogue-gated</option><option value="ungated">Ungated</option></select></div>
+      <div class="field"><label class="label" for="sp-target">Target LUFS</label><input id="sp-target" type="number" step="0.1" value="-23" required></div>
+      <div class="field"><label class="label" for="sp-tol">± LU</label><input id="sp-tol" type="number" step="0.1" min="0" value="1" required></div>
+      <div class="field"><label class="label" for="sp-tp">Max dBTP</label><input id="sp-tp" type="number" step="0.1" value="-1" required></div>
+      <button class="btn" type="submit">Add spec</button>
+    </form>
+  </section>
+
+  <section class="grid2b">
+    <div class="panel">
+      <h2>Match a QC report</h2>
+      <p class="sub">Type the integrated loudness a QC platform reported for this file. Gatecheck finds which measurement method reproduces it, including common channel-mapping mistakes.</p>
+      <div class="row">
+        <div class="field"><label class="label" for="qc-platform">QC platform</label><input id="qc-platform" value="SDVI Qualify"></div>
+        <div class="field" style="flex:0 1 150px"><label class="label" for="qc-value">Reported LUFS</label><input id="qc-value" type="number" step="0.1" placeholder="-23.6"></div>
+      </div>
+      <ul class="matches" id="matches"></ul>
+      <div class="verdict" id="match-verdict"></div>
+      <div class="row" style="margin-top:12px"><button class="btn" id="save-cal" type="button" disabled>Save as calibration</button><span class="fine" id="cal-hint"></span></div>
+    </div>
+    <div class="panel">
+      <h2>Calibration</h2>
+      <p class="sub">Offsets learned from QC reports you have matched. After a few files, Gatecheck predicts what each platform will report before you deliver. Saved in this browser.</p>
+      <div id="calib"></div>
+    </div>
+  </section>
+
+  <section class="grid2b">
+    <div class="panel">
+      <h2>Correct to spec</h2>
+      <p class="sub">A static gain change to hit the selected spec's target with its own gate. True peak is checked after the gain.</p>
+      <div id="correct"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="save-wav" type="button" disabled>Save corrected WAV (.zip)</button>
+        <button class="btn ghost" id="copy-gain" type="button">Copy gain</button>
+      </div>
+      <p class="fine" id="save-note" style="margin:8px 0 0"></p>
+    </div>
+    <div class="panel">
+      <h2>Report</h2>
+      <p class="sub">Every reading, every spec verdict and the QC match for this file, as a CSV for the ticket or the QC log.</p>
+      <button class="btn" id="save-csv" type="button">Save report (.csv)</button>
+      <p class="fine" style="margin:12px 0 0">The dialogue detector is Gatecheck's own (speech-band energy, syllabic modulation and pauses). Commercial detectors differ, so dialogue-gated values can sit a few tenths of an LU away from a QC platform's. Use calibration to close that gap.</p>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script id="gc-lib">
+/* Gatecheck loudness engine — ITU-R BS.1770 measurement, streaming.
+   Works in a Web Worker and in Node (module.exports). */
+(function (root) {
+  'use strict';
+
+  // ---------- K-weighting (libebur128 formulation, any sample rate) ----------
+  function kCoeffs(fs) {
+    let f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+    let K = Math.tan(Math.PI * f0 / fs);
+    const Vh = Math.pow(10, G / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    let a0 = 1 + K / Q + K * K;
+    const s1 = {
+      b0: (Vh + Vb * K / Q + K * K) / a0, b1: 2 * (K * K - Vh) / a0, b2: (Vh - Vb * K / Q + K * K) / a0,
+      a1: 2 * (K * K - 1) / a0, a2: (1 - K / Q + K * K) / a0
+    };
+    f0 = 38.13547087602444; Q = 0.5003270373238773; K = Math.tan(Math.PI * f0 / fs);
+    a0 = 1 + K / Q + K * K;
+    const s2 = { b0: 1, b1: -2, b2: 1, a1: 2 * (K * K - 1) / a0, a2: (1 - K / Q + K * K) / a0 };
+    return [s1, s2];
+  }
+  // RBJ biquads for the speech-band detector
+  function rbj(type, f, fs, q) {
+    const w = 2 * Math.PI * f / fs, c = Math.cos(w), al = Math.sin(w) / (2 * q);
+    const a0 = 1 + al;
+    if (type === 'hp') return { b0: (1 + c) / 2 / a0, b1: -(1 + c) / a0, b2: (1 + c) / 2 / a0, a1: -2 * c / a0, a2: (1 - al) / a0 };
+    return { b0: (1 - c) / 2 / a0, b1: (1 - c) / a0, b2: (1 - c) / 2 / a0, a1: -2 * c / a0, a2: (1 - al) / a0 };
+  }
+
+  // ---------- True-peak 4x interpolator (Kaiser-windowed sinc, 16 taps/phase) ----------
+  function bessel0(x) { let s = 1, t = 1; for (let k = 1; k < 30; k++) { t *= (x / (2 * k)) ** 2; s += t; } return s; }
+  function tpFilter() {
+    const L = 4, T = 16, N = L * T, beta = 7, h = new Float64Array(N);
+    const mid = (N - 1) / 2;
+    for (let n = 0; n < N; n++) {
+      const x = (n - mid) / L;
+      const sinc = x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const r = (n - mid) / (mid + 0.5);
+      h[n] = sinc * bessel0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / bessel0(beta);
+    }
+    const ph = [];
+    for (let p = 0; p < L; p++) {
+      const c = new Float64Array(T); let s = 0;
+      for (let k = 0; k < T; k++) { c[k] = h[p + L * k]; s += c[k]; }
+      for (let k = 0; k < T; k++) c[k] /= s;
+      ph.push(c);
+    }
+    return ph;
+  }
+  const TP_PHASES = tpFilter();
+
+  // growable float arrays
+  class Grow {
+    constructor(T) { this.T = T; this.a = new T(4096); this.n = 0; }
+    push(v) { if (this.n === this.a.length) { const b = new this.T(this.a.length * 2); b.set(this.a); this.a = b; } this.a[this.n++] = v; }
+    view() { return this.a.subarray(0, this.n); }
+  }
+
+  // ---------- Streaming analyser ----------
+  // Stores per-channel 10 ms frame energies so channel layouts can be re-interpreted later.
+  class Analyser {
+    constructor(fs, nCh) {
+      this.fs = fs; this.nCh = nCh;
+      this.frameLen = Math.max(1, Math.round(fs / 100));
+      const [k1, k2] = kCoeffs(fs);
+      this.k1 = k1; this.k2 = k2;
+      this.hp = rbj('hp', 300, fs, 0.7071); this.lp = rbj('lp', Math.min(3400, fs * 0.45), fs, 0.7071);
+      this.st = []; // per-channel state
+      for (let c = 0; c < nCh; c++) {
+        this.st.push({
+          k1: [0, 0, 0, 0], k2: [0, 0, 0, 0], hp: [0, 0, 0, 0], lp: [0, 0, 0, 0],
+          hist: new Float64Array(16), hpos: 0,
+          accK: 0, accB: 0, accR: 0,
+          fK: new Grow(Float32Array), fB: new Grow(Float32Array), fR: new Grow(Float32Array),
+          peak: 0, tp: 0
+        });
+      }
+      this.accX = 0; this.fX = new Grow(Float32Array); // K-weighted cross term ch0*ch1 (stereo fold)
+      this.fpos = 0; this.samples = 0;
+    }
+    // chans: array of Float32Array (one per channel), equal length
+    process(chans) {
+      const n = chans[0].length, nCh = this.nCh, FL = this.frameLen;
+      const k1 = this.k1, k2 = this.k2, hp = this.hp, lp = this.lp;
+      const ph0 = TP_PHASES[0], ph1 = TP_PHASES[1], ph2 = TP_PHASES[2], ph3 = TP_PHASES[3];
+      // We need K-weighted ch0/ch1 for the cross term; keep last values per sample.
+      let kv0 = 0, kv1 = 0;
+      for (let i = 0; i < n; i++) {
+        for (let c = 0; c < nCh; c++) {
+          const s = this.st[c];
+          const x = chans[c][i];
+          // K-weighting: stage 1 (transposed DF2)
+          let z = s.k1;
+          let y1 = k1.b0 * x + z[0];
+          z[0] = k1.b1 * x - k1.a1 * y1 + z[1];
+          z[1] = k1.b2 * x - k1.a2 * y1;
+          z = s.k2;
+          const y = k2.b0 * y1 + z[0];
+          z[0] = k2.b1 * y1 - k2.a1 * y + z[1];
+          z[1] = k2.b2 * y1 - k2.a2 * y;
+          s.accK += y * y;
+          if (c === 0) kv0 = y; else if (c === 1) kv1 = y;
+          // speech band
+          z = s.hp;
+          const h1 = hp.b0 * x + z[0];
+          z[0] = hp.b1 * x - hp.a1 * h1 + z[1];
+          z[1] = hp.b2 * x - hp.a2 * h1;
+          z = s.lp;
+          const b = lp.b0 * h1 + z[0];
+          z[0] = lp.b1 * h1 - lp.a1 * b + z[1];
+          z[1] = lp.b2 * h1 - lp.a2 * b;
+          s.accB += b * b; s.accR += x * x;
+          // peaks
+          const ax = x < 0 ? -x : x;
+          if (ax > s.peak) s.peak = ax;
+          const hist = s.hist; let p = s.hpos = (s.hpos + 15) & 15; hist[p] = x;
+          // interpolate only when this region could beat the running true peak
+          if (ax > s.tp * 0.5) {
+            let a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+            for (let k = 0; k < 16; k++) {
+              const v = hist[(p + k) & 15];
+              a0 += ph0[k] * v; a1 += ph1[k] * v; a2 += ph2[k] * v; a3 += ph3[k] * v;
+            }
+            let m = a0 < 0 ? -a0 : a0;
+            let t = a1 < 0 ? -a1 : a1; if (t > m) m = t;
+            t = a2 < 0 ? -a2 : a2; if (t > m) m = t;
+            t = a3 < 0 ? -a3 : a3; if (t > m) m = t;
+            if (m > s.tp) s.tp = m;
+          }
+        }
+        if (nCh > 1) this.accX += kv0 * kv1;
+        if (++this.fpos === FL) {
+          for (let c = 0; c < nCh; c++) {
+            const s = this.st[c];
+            s.fK.push(s.accK / FL); s.fB.push(s.accB / FL); s.fR.push(s.accR / FL);
+            s.accK = s.accB = s.accR = 0;
+          }
+          this.fX.push(this.accX / FL); this.accX = 0;
+          this.fpos = 0;
+        }
+      }
+      this.samples += n;
+    }
+    // Hand the raw data to the results stage
+    finish() {
+      const ch = this.st.map(s => ({
+        fK: s.fK.view(), fB: s.fB.view(), fR: s.fR.view(),
+        peak: Math.max(s.peak, s.tp > 0 ? 0 : 0), samplePeak: s.peak, truePeak: Math.max(s.tp, s.peak)
+      }));
+      return { fs: this.fs, nCh: this.nCh, frames: ch[0].fK.length, duration: this.samples / this.fs, ch, fX: this.fX.view() };
+    }
+  }
+
+  // ---------- Measurement from stored frames ----------
+  const LUFS = e => e > 0 ? -0.691 + 10 * Math.log10(e) : -Infinity;
+  const db = v => v > 0 ? 20 * Math.log10(v) : -Infinity;
+
+  // layout: { weights: number[] per stored channel (0 = excluded), dialogue: channel indices for dialogue detection, fold?:bool }
+  function segmentEnergies(raw, weights, fold) {
+    const F = raw.frames, S = Math.floor(F / 10), seg = new Float64Array(S);
+    for (let s = 0; s < S; s++) {
+      let e = 0;
+      if (fold) {
+        // stereo folded to mono: ((L+R)/2)^2 measured as one channel
+        let l = 0, r = 0, x = 0;
+        for (let f = s * 10; f < s * 10 + 10; f++) { l += raw.ch[0].fK[f]; r += raw.ch[1].fK[f]; x += raw.fX[f]; }
+        e = (l + r + 2 * x) / 40;
+      } else {
+        for (let c = 0; c < weights.length; c++) {
+          const w = weights[c]; if (!w) continue;
+          const fk = raw.ch[c].fK; let a = 0;
+          for (let f = s * 10; f < s * 10 + 10; f++) a += fk[f];
+          e += w * a / 10;
+        }
+      }
+      seg[s] = e;
+    }
+    return seg;
+  }
+  function blocks(seg, len) { // sliding window of `len` segments, hop 1
+    const n = seg.length - len + 1; if (n <= 0) return new Float64Array(0);
+    const out = new Float64Array(n); let acc = 0;
+    for (let i = 0; i < seg.length; i++) {
+      acc += seg[i]; if (i >= len) acc -= seg[i - len];
+      if (i >= len - 1) out[i - len + 1] = acc / len;
+    }
+    return out;
+  }
+  function gated(blk, rel, mask) {
+    const absT = Math.pow(10, (-70 + 0.691) / 10);
+    let s = 0, n = 0;
+    for (let i = 0; i < blk.length; i++) if (blk[i] > absT && (!mask || mask[i])) { s += blk[i]; n++; }
+    if (!n) return { lufs: -Infinity, n: 0 };
+    if (rel === null) return { lufs: LUFS(s / n), n };
+    const relT = (s / n) * Math.pow(10, rel / 10);
+    let s2 = 0, n2 = 0;
+    for (let i = 0; i < blk.length; i++) if (blk[i] > absT && blk[i] > relT && (!mask || mask[i])) { s2 += blk[i]; n2++; }
+    return { lufs: n2 ? LUFS(s2 / n2) : -Infinity, n: n2 };
+  }
+  function lra(st) {
+    const absT = Math.pow(10, (-70 + 0.691) / 10);
+    const a = []; let s = 0;
+    for (let i = 0; i < st.length; i++) if (st[i] > absT) { a.push(st[i]); s += st[i]; }
+    if (a.length < 2) return 0;
+    const relT = (s / a.length) * Math.pow(10, -20 / 10);
+    const b = a.filter(v => v > relT).map(LUFS).sort((x, y) => x - y);
+    if (b.length < 2) return 0;
+    const q = p => b[Math.min(b.length - 1, Math.max(0, Math.round((b.length - 1) * p)))];
+    return q(0.95) - q(0.10);
+  }
+
+  // ---------- Dialogue detector (heuristic v1) ----------
+  // Per 400 ms block: speech-band energy share, syllabic level modulation and inter-word dips
+  // measured on the dialogue channel(s) over a 1 s window. Smoothed with a 0.5 s median + hangover.
+  function dialogueMask(raw, dlgChans, nBlocks) {
+    const F = raw.frames;
+    const B = new Float64Array(F), R = new Float64Array(F);
+    for (const c of dlgChans) { const fb = raw.ch[c].fB, fr = raw.ch[c].fR; for (let f = 0; f < F; f++) { B[f] += fb[f]; R[f] += fr[f]; } }
+    const L = new Float64Array(F);
+    for (let f = 0; f < F; f++) L[f] = 10 * Math.log10(B[f] + 1e-12);
+    const score = new Float64Array(nBlocks), feat = [];
+    for (let i = 0; i < nBlocks; i++) {
+      const f0 = i * 10, f1 = f0 + 40;              // the 400 ms block in 10 ms frames
+      let sb = 0, sr = 0; for (let f = f0; f < f1 && f < F; f++) { sb += B[f]; sr += R[f]; }
+      const share = sr > 0 ? sb / sr : 0;
+      const w0 = Math.max(0, f0 - 30), w1 = Math.min(F, f1 + 30); // ~1 s analysis window
+      let mx = -200; for (let f = w0; f < w1; f++) if (L[f] > mx) mx = L[f];
+      const floor = mx - 45;
+      let m = 0, n = 0; for (let f = w0; f < w1; f++) { m += Math.max(L[f], floor); n++; }
+      m /= n; let v = 0, dips = 0;
+      for (let f = w0; f < w1; f++) { const x = Math.max(L[f], floor) - m; v += x * x; if (L[f] < mx - 15) dips++; }
+      const sd = Math.sqrt(v / n), dipFrac = dips / n;
+      // logistic-ish score from three cues
+      const cShare = clamp((share - 0.35) / 0.35);
+      const cMod = clamp((sd - 3.5) / 5);
+      const cDip = clamp((dipFrac - 0.05) / 0.2);
+      score[i] = 0.45 * cShare + 0.35 * cMod + 0.2 * cDip;
+      feat.push([share, sd, dipFrac]);
+    }
+    const raw1 = new Uint8Array(nBlocks);
+    for (let i = 0; i < nBlocks; i++) raw1[i] = score[i] > 0.55 ? 1 : 0;
+    // median over 5 blocks then 300 ms hangover
+    const med = new Uint8Array(nBlocks);
+    for (let i = 0; i < nBlocks; i++) { let s = 0, n = 0; for (let k = i - 2; k <= i + 2; k++) if (k >= 0 && k < nBlocks) { s += raw1[k]; n++; } med[i] = s * 2 > n ? 1 : 0; }
+    const out = new Uint8Array(nBlocks);
+    let hang = 0;
+    for (let i = 0; i < nBlocks; i++) { if (med[i]) hang = 3; out[i] = hang > 0 ? 1 : 0; if (!med[i]) hang--; }
+    return { mask: out, score, feat };
+  }
+  function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+
+  // ---------- Full report for one layout ----------
+  function measure(raw, layout) {
+    const seg = segmentEnergies(raw, layout.weights, layout.fold);
+    const blk = blocks(seg, 4), st = blocks(seg, 30);
+    const ungated = gated(blk, null, null);
+    const level = gated(blk, -10, null);
+    let dlg = null;
+    if (layout.dialogue && layout.dialogue.length) {
+      const dm = dialogueMask(raw, layout.dialogue, blk.length);
+      const g = gated(blk, null, dm.mask);
+      let speech = 0; for (let i = 0; i < dm.mask.length; i++) speech += dm.mask[i];
+      const pct = blk.length ? 100 * speech / blk.length : 0;
+      dlg = { lufs: g.lufs, speechPct: pct, fallback: pct < 10, mask: dm.mask };
+    }
+    let mMax = -Infinity, sMax = -Infinity;
+    for (let i = 0; i < blk.length; i++) { const v = LUFS(blk[i]); if (v > mMax) mMax = v; }
+    for (let i = 0; i < st.length; i++) { const v = LUFS(st[i]); if (v > sMax) sMax = v; }
+    let tp = 0, sp = 0;
+    layout.weights.forEach((w, c) => { if (w || layout.fold) { tp = Math.max(tp, raw.ch[c].truePeak); sp = Math.max(sp, raw.ch[c].samplePeak); } });
+    // short-term curve, decimated to ~1 s for display
+    const curve = [];
+    for (let i = 0; i < st.length; i += 10) curve.push(LUFS(st[i]));
+    const dlgCurve = [];
+    if (dlg) for (let i = 0; i < dlg.mask.length; i += 10) dlgCurve.push(dlg.mask[i]);
+    return {
+      ungated: ungated.lufs, level: level.lufs,
+      dialogue: dlg ? (dlg.fallback ? level.lufs : dlg.lufs) : null,
+      dialogueRaw: dlg ? dlg.lufs : null, speechPct: dlg ? dlg.speechPct : null, dialogueFallback: dlg ? dlg.fallback : null,
+      momentaryMax: mMax, shortTermMax: sMax, lra: lra(st),
+      truePeak: db(tp), samplePeak: db(sp), curve, dlgCurve
+    };
+  }
+
+  const api = { Analyser, measure, kCoeffs, LUFS, db };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GC = api;
+})(typeof self !== 'undefined' ? self : this);
+
+/* WAV / BWF / RF64 header parsing and streaming PCM decode. */
+(function (root) {
+  'use strict';
+  const str = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+
+  // read(offset, length) -> Promise<ArrayBuffer>; size = total file size
+  async function parseHeader(read, size) {
+    let dv = new DataView(await read(0, 12));
+    const id = str(dv, 0);
+    if ((id !== 'RIFF' && id !== 'RF64' && id !== 'BW64') || str(dv, 8) !== 'WAVE') throw new Error('Not a WAV/BWF file. Export a WAV from your master first.');
+    let pos = 12, fmt = null, dataOffset = -1, dataLength = 0, ds64Data = null, bext = null;
+    while (pos + 8 <= size) {
+      dv = new DataView(await read(pos, 8));
+      const cid = str(dv, 0); let len = dv.getUint32(4, true);
+      if (cid === 'ds64') {
+        const d = new DataView(await read(pos + 8, Math.min(len, 64)));
+        ds64Data = d.getUint32(8, true) + d.getUint32(12, true) * 4294967296;
+      } else if (cid === 'fmt ') {
+        const d = new DataView(await read(pos + 8, Math.min(len, 40)));
+        fmt = { tag: d.getUint16(0, true), ch: d.getUint16(2, true), fs: d.getUint32(4, true), align: d.getUint16(12, true), bits: d.getUint16(14, true), mask: 0 };
+        if (fmt.tag === 0xFFFE && len >= 40) { fmt.mask = d.getUint32(20, true); fmt.tag = d.getUint16(24, true); }
+      } else if (cid === 'bext') {
+        const d = new Uint8Array(await read(pos + 8, Math.min(len, 256)));
+        bext = String.fromCharCode(...d.subarray(0, 256)).replace(/\0.*$/s, '').trim();
+      } else if (cid === 'data') {
+        dataOffset = pos + 8;
+        dataLength = (len === 0xFFFFFFFF && ds64Data !== null) ? ds64Data : len;
+        dataLength = Math.min(dataLength, size - dataOffset);
+        break;
+      }
+      if (len === 0xFFFFFFFF) break;
+      pos += 8 + len + (len & 1);
+    }
+    if (!fmt) throw new Error('This WAV has no format chunk.');
+    if (dataOffset < 0) throw new Error('This WAV has no audio data chunk.');
+    if (fmt.tag !== 1 && fmt.tag !== 3) throw new Error('Unsupported WAV encoding (tag ' + fmt.tag + '). Use PCM or float WAV.');
+    if (fmt.tag === 1 && ![8, 16, 24, 32].includes(fmt.bits)) throw new Error(fmt.bits + '-bit PCM is not supported.');
+    if (fmt.tag === 3 && ![32, 64].includes(fmt.bits)) throw new Error(fmt.bits + '-bit float is not supported.');
+    fmt.align = fmt.ch * fmt.bits / 8;
+    return { ...fmt, dataOffset, dataLength, frames: Math.floor(dataLength / fmt.align), bext };
+  }
+
+  // decode interleaved bytes into per-channel Float32Arrays
+  function decode(buf, h) {
+    const dv = new DataView(buf), n = Math.floor(buf.byteLength / h.align), C = h.ch;
+    const out = []; for (let c = 0; c < C; c++) out.push(new Float32Array(n));
+    const bps = h.bits / 8; let o = 0;
+    if (h.tag === 3 && h.bits === 32) {
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) { out[c][i] = dv.getFloat32(o, true); o += 4; }
+    } else if (h.tag === 3) {
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) { out[c][i] = dv.getFloat64(o, true); o += 8; }
+    } else if (h.bits === 16) {
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) { out[c][i] = dv.getInt16(o, true) / 32768; o += 2; }
+    } else if (h.bits === 24) {
+      const u = new Uint8Array(buf);
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) {
+        let v = u[o] | (u[o + 1] << 8) | (u[o + 2] << 16); if (v & 0x800000) v -= 0x1000000;
+        out[c][i] = v / 8388608; o += 3;
+      }
+    } else if (h.bits === 32) {
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) { out[c][i] = dv.getInt32(o, true) / 2147483648; o += 4; }
+    } else {
+      for (let i = 0; i < n; i++) for (let c = 0; c < C; c++) { out[c][i] = (dv.getUint8(o) - 128) / 128; o += 1; }
+    }
+    void bps;
+    return out;
+  }
+
+  // Re-encode with gain, same format. Returns ArrayBuffer of interleaved data.
+  function encodeGain(buf, h, gain) {
+    const src = new DataView(buf), n = Math.floor(buf.byteLength / h.align);
+    const out = new ArrayBuffer(n * h.align), dv = new DataView(out);
+    const total = n * h.ch; let o = 0, clips = 0;
+    for (let k = 0; k < total; k++) {
+      if (h.tag === 3 && h.bits === 32) { dv.setFloat32(o, src.getFloat32(o, true) * gain, true); o += 4; continue; }
+      if (h.tag === 3) { dv.setFloat64(o, src.getFloat64(o, true) * gain, true); o += 8; continue; }
+      if (h.bits === 16) { let v = Math.round(src.getInt16(o, true) * gain); if (v > 32767) { v = 32767; clips++; } else if (v < -32768) { v = -32768; clips++; } dv.setInt16(o, v, true); o += 2; continue; }
+      if (h.bits === 24) {
+        let v = src.getUint8(o) | (src.getUint8(o + 1) << 8) | (src.getUint8(o + 2) << 16); if (v & 0x800000) v -= 0x1000000;
+        v = Math.round(v * gain); if (v > 8388607) { v = 8388607; clips++; } else if (v < -8388608) { v = -8388608; clips++; }
+        dv.setUint8(o, v & 255); dv.setUint8(o + 1, (v >> 8) & 255); dv.setUint8(o + 2, (v >> 16) & 255); o += 3; continue;
+      }
+      if (h.bits === 32) { let v = Math.round(src.getInt32(o, true) * gain); if (v > 2147483647) { v = 2147483647; clips++; } else if (v < -2147483648) { v = -2147483648; clips++; } dv.setInt32(o, v, true); o += 4; continue; }
+      let v = Math.round((src.getUint8(o) - 128) * gain) + 128; if (v > 255) { v = 255; clips++; } else if (v < 0) { v = 0; clips++; } dv.setUint8(o, v); o += 1;
+    }
+    return { buf: out, clips };
+  }
+
+  const api = { parseHeader, decode, encodeGain };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.WAV = api;
+})(typeof self !== 'undefined' ? self : this);
+
+/* Synthetic test programme: formant-synthesised dialogue and a music bed. */
+(function (root) {
+  'use strict';
+  function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+  function reson(f, bw, fs) { // 2-pole resonator
+    const r = Math.exp(-Math.PI * bw / fs), th = 2 * Math.PI * f / fs;
+    return { a1: -2 * r * Math.cos(th), a2: r * r, g: (1 - r * r) * 0.5, y1: 0, y2: 0 };
+  }
+  const run = (z, x) => { const y = z.g * x - z.a1 * z.y1 - z.a2 * z.y2; z.y2 = z.y1; z.y1 = y; return y; };
+  const VOWELS = [[730, 1090, 2440], [270, 2290, 3010], [530, 1840, 2480], [660, 1720, 2410], [300, 870, 2240], [640, 1190, 2390], [490, 1350, 1690]];
+
+  function speech(sec, fs, seed) {
+    const R = rng(seed), n = Math.round(sec * fs), x = new Float32Array(n);
+    let t = 0.2 * fs, phase = 0;
+    while (t < n) {
+      const syl = 1 + Math.floor(R() * 3);
+      for (let k = 0; k < syl && t < n; k++) {
+        const dur = Math.round((0.12 + R() * 0.14) * fs), v = VOWELS[Math.floor(R() * VOWELS.length)];
+        const f = v.map((fq, i) => reson(fq, [80, 100, 140][i], fs)), f0b = 105 + R() * 80;
+        const fric = R() < 0.4 ? Math.round((0.04 + R() * 0.05) * fs) : 0;
+        const hpS = { y: 0, x: 0 };
+        for (let i = 0; i < fric && t + i < n; i++) { // fricative: high-passed noise
+          const w = R() * 2 - 1, y = 0.92 * (hpS.y + w - hpS.x); hpS.x = w; hpS.y = y;
+          x[t + i] += 0.08 * y * Math.sin(Math.PI * i / fric);
+        }
+        t += fric;
+        for (let i = 0; i < dur && t + i < n; i++) {
+          const env = Math.min(1, i / (0.02 * fs), (dur - i) / (0.04 * fs));
+          const f0 = f0b * (1 + 0.08 * Math.sin(2 * Math.PI * i / dur)) * (1 + (R() - 0.5) * 0.01);
+          phase += f0 / fs; let src = 0; if (phase >= 1) { phase -= 1; src = 1; }
+          const s = run(f[0], src) + 0.6 * run(f[1], src) + 0.3 * run(f[2], src);
+          x[t + i] += 6 * env * s;
+        }
+        t += dur + Math.round(R() * 0.03 * fs);
+      }
+      t += Math.round((R() < 0.25 ? 0.35 + R() * 0.4 : 0.06 + R() * 0.15) * fs);
+    }
+    return x;
+  }
+
+  function music(sec, fs, seed) {
+    const R = rng(seed), n = Math.round(sec * fs), L = new Float32Array(n), Rt = new Float32Array(n);
+    const chords = [[220, 277.2, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [196, 246.9, 311.1]];
+    const beat = 0.5 * fs;
+    for (let i = 0; i < n; i++) {
+      const ch = chords[Math.floor(i / (2 * fs)) % 4]; let s = 0;
+      for (let v = 0; v < 3; v++) for (let h = 1; h <= 6; h++) s += Math.sin(2 * Math.PI * ch[v] * h * i / fs + v) / (h * 1.4);
+      const bass = Math.sin(2 * Math.PI * ch[0] / 2 * i / fs) * 0.8;
+      const bt = i % beat, kick = Math.sin(2 * Math.PI * 55 * bt / fs) * Math.exp(-bt / (0.08 * fs)) * 1.6;
+      const hb = (i + beat / 2) % beat, hat = (R() * 2 - 1) * Math.exp(-hb / (0.015 * fs)) * 0.25;
+      L[i] = 0.06 * s + 0.12 * bass + 0.15 * kick + hat;
+      Rt[i] = 0.06 * s * 0.9 + 0.12 * bass + 0.15 * kick + hat * 0.8;
+    }
+    return [L, Rt];
+  }
+
+  // 90 s stereo programme: dialogue scenes with a bed, loud music in between.
+  function programme(fs) {
+    const sec = 90, n = sec * fs, L = new Float32Array(n), Rr = new Float32Array(n);
+    const sp = speech(sec, fs, 7), [mL, mR] = music(sec, fs, 11);
+    const truth = [];
+    const g = (t) => t < 25 ? [1, 0.12] : t < 45 ? [0, 0.75] : t < 75 ? [1, 0.12] : [0, 0.75];
+    for (let i = 0; i < n; i++) {
+      const [d, m] = g(i / fs);
+      L[i] = 0.35 * d * sp[i] + m * mL[i];
+      Rr[i] = 0.35 * d * sp[i] + m * mR[i];
+    }
+    for (let t = 0; t < sec; t++) truth.push(g(t)[0]);
+    return { fs, chans: [L, Rr], truth };
+  }
+
+  const api = { speech, music, programme };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SYNTH = api;
+})(typeof self !== 'undefined' ? self : this);
+
+</script>
+<script type="text/plain" id="gc-worker">
+/* worker main */
+const post = (m, t) => self.postMessage(m, t || []);
+function pack(raw) {
+  const tr = [];
+  raw.ch = raw.ch.map(c => { const o = { fK: c.fK.slice(), fB: c.fB.slice(), fR: c.fR.slice(), samplePeak: c.samplePeak, truePeak: c.truePeak }; tr.push(o.fK.buffer, o.fB.buffer, o.fR.buffer); return o; });
+  raw.fX = raw.fX.slice(); tr.push(raw.fX.buffer);
+  return [raw, tr];
+}
+async function analyseChans(chans, fs, label) {
+  const A = new GC.Analyser(fs, chans.length), step = fs * 5, n = chans[0].length;
+  for (let i = 0; i < n; i += step) {
+    A.process(chans.map(c => c.subarray(i, i + step)));
+    post({ type: 'progress', p: Math.min(1, (i + step) / n), text: label });
+  }
+  const [raw, tr] = pack(A.finish());
+  post({ type: 'raw', raw }, tr);
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(crc, buf) { const u = new Uint8Array(buf); let c = crc ^ 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+self.onmessage = async (e) => {
+  const m = e.data;
+  try {
+    if (m.type === 'demo') {
+      post({ type: 'progress', p: 0.05, text: 'Synthesising example programme…' });
+      const P = SYNTH.programme(48000);
+      post({ type: 'header', h: { kind: 'demo', fs: 48000, ch: 2, bits: 24, tag: 1, frames: P.chans[0].length, mask: 0 } });
+      await analyseChans(P.chans, 48000, 'Measuring…');
+    } else if (m.type === 'pcm') {
+      await analyseChans(m.chans, m.fs, 'Measuring…');
+    } else if (m.type === 'wav') {
+      const f = m.file, read = (o, l) => f.slice(o, o + l).arrayBuffer();
+      const h = await WAV.parseHeader(read, f.size);
+      h.kind = 'wav';
+      post({ type: 'header', h });
+      const A = new GC.Analyser(h.fs, h.ch);
+      const chunk = h.align * Math.max(1, Math.floor((6 * 1024 * 1024) / h.align));
+      for (let o = 0; o < h.dataLength; o += chunk) {
+        const buf = await read(h.dataOffset + o, Math.min(chunk, h.dataLength - o));
+        A.process(WAV.decode(buf, h));
+        post({ type: 'progress', p: Math.min(1, (o + chunk) / h.dataLength), text: 'Measuring…' });
+      }
+      const [raw, tr] = pack(A.finish());
+      post({ type: 'raw', raw }, tr);
+    } else if (m.type === 'correct') {
+      const f = m.file, h = m.h, gain = Math.pow(10, m.gainDb / 20);
+      const parts = []; let crc = 0, size = 0, clips = 0;
+      const head = await f.slice(0, h.dataOffset).arrayBuffer();
+      parts.push(head); crc = crc32(crc, head); size += head.byteLength;
+      const chunk = h.align * Math.max(1, Math.floor((6 * 1024 * 1024) / h.align));
+      for (let o = 0; o < h.dataLength; o += chunk) {
+        const buf = await f.slice(h.dataOffset + o, h.dataOffset + Math.min(o + chunk, h.dataLength)).arrayBuffer();
+        const r = WAV.encodeGain(buf, h, gain); clips += r.clips;
+        parts.push(r.buf); crc = crc32(crc, r.buf); size += r.buf.byteLength;
+        post({ type: 'progress', p: Math.min(1, (o + chunk) / h.dataLength), text: 'Writing corrected copy…' });
+      }
+      const tail = await f.slice(h.dataOffset + h.dataLength).arrayBuffer();
+      if (tail.byteLength) { parts.push(tail); crc = crc32(crc, tail); size += tail.byteLength; }
+      // stored (uncompressed) zip around the WAV
+      const name = new TextEncoder().encode(m.name);
+      const d = new Date(), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+      const lh = new DataView(new ArrayBuffer(30));
+      [[0, 0x04034b50, 4], [4, 20, 2], [6, 0, 2], [8, 0, 2], [10, tm, 2], [12, dt, 2], [14, crc, 4], [18, size, 4], [22, size, 4], [26, name.length, 2], [28, 0, 2]].forEach(([o, v, l]) => l === 4 ? lh.setUint32(o, v, true) : lh.setUint16(o, v, true));
+      const cd = new DataView(new ArrayBuffer(46));
+      [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0, 2], [10, 0, 2], [12, tm, 2], [14, dt, 2], [16, crc, 4], [20, size, 4], [24, size, 4], [28, name.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, 0, 4]].forEach(([o, v, l]) => l === 4 ? cd.setUint32(o, v, true) : cd.setUint16(o, v, true));
+      const cdOff = 30 + name.length + size, cdSize = 46 + name.length;
+      const eo = new DataView(new ArrayBuffer(22));
+      [[0, 0x06054b50, 4], [4, 0, 2], [6, 0, 2], [8, 1, 2], [10, 1, 2], [12, cdSize, 4], [16, cdOff, 4], [20, 0, 2]].forEach(([o, v, l]) => l === 4 ? eo.setUint32(o, v, true) : eo.setUint16(o, v, true));
+      const blob = new Blob([lh.buffer, name, ...parts, cd.buffer, name, eo.buffer]);
+      post({ type: 'corrected', blob, clips });
+    }
+  } catch (err) {
+    post({ type: 'error', message: err && err.message ? err.message : String(err) });
+  }
+};
+</script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+  };
+  const fin = v => typeof v === 'number' && isFinite(v);
+  const minus = s => s.replace(/^-/, '−');
+  const f1 = v => fin(v) ? minus(v.toFixed(1)) : '—';
+  const sgn = v => fin(v) ? (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1) : '—';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600); }
+
+  const MODES = { level: { name: 'Level-gated', color: 'var(--accent)' }, dialogue: { name: 'Dialogue-gated', color: 'var(--dlg)' }, ungated: { name: 'Ungated', color: 'var(--ungated)' } };
+  const BUILTIN = [
+    { id: 'r128', name: 'EBU R128', note: 'European broadcast', mode: 'level', target: -23, tol: 0.5, tp: -1 },
+    { id: 'r128d', name: 'R128 target, dialogue-gated', note: 'What some QC templates actually run', mode: 'dialogue', target: -23, tol: 0.5, tp: -1 },
+    { id: 'a85', name: 'ATSC A/85', note: 'US broadcast (CALM Act)', mode: 'level', target: -24, tol: 2, tp: -2 },
+    { id: 'nflx', name: 'Netflix', note: 'Streaming, dialogue-anchored', mode: 'dialogue', target: -27, tol: 2, tp: -2 },
+    { id: 'arib', name: 'ARIB TR-B32', note: 'Japan broadcast', mode: 'level', target: -24, tol: 1, tp: -1 },
+    { id: 'op59', name: 'OP-59', note: 'Australian free-to-air', mode: 'level', target: -24, tol: 1, tp: -2 }
+  ];
+  const S = {
+    h: null, raw: null, file: null, demo: false, layouts: [], layout: null, res: null, variants: [],
+    custom: store.get('gc.specs', []), selSpec: store.get('gc.sel', 'r128'), calib: store.get('gc.calib', []), match: null
+  };
+  const specs = () => BUILTIN.concat(S.custom);
+  const curSpec = () => specs().find(s => s.id === S.selSpec) || BUILTIN[0];
+
+  // ---------- worker ----------
+  const libText = $('gc-lib').textContent, wText = $('gc-worker').textContent;
+  let worker = null, onCorrected = null;
+  function startWorker() {
+    if (worker) worker.terminate();
+    worker = new Worker(URL.createObjectURL(new Blob([libText, '\n', wText], { type: 'text/javascript' })));
+    worker.onmessage = e => {
+      const m = e.data;
+      if (m.type === 'progress') { $('prog').style.width = (m.p * 100).toFixed(1) + '%'; $('prog-text').textContent = m.text + ' ' + Math.round(m.p * 100) + '%'; }
+      else if (m.type === 'header') { S.h = m.h; }
+      else if (m.type === 'raw') { S.raw = m.raw; $('prog-wrap').hidden = true; onLoaded(); }
+      else if (m.type === 'corrected') { $('prog-wrap').hidden = true; onCorrected && onCorrected(m); }
+      else if (m.type === 'error') { $('prog-wrap').hidden = true; showErr(m.message); }
+    };
+    return worker;
+  }
+  function showErr(t) { const el = $('err'); el.textContent = t; el.hidden = !t; }
+  function busy(t) { $('prog-wrap').hidden = false; $('prog').style.width = '0%'; $('prog-text').textContent = t; showErr(''); }
+
+  function loadDemo() { S.demo = true; S.file = null; S.h = null; busy('Synthesising example programme…'); startWorker().postMessage({ type: 'demo' }); }
+  async function loadFile(f) {
+    if (!f) return;
+    S.demo = false; S.file = f; S.h = null; busy('Reading ' + f.name + '…');
+    const isWav = /\.(wav|bwf|rf64)$/i.test(f.name) || f.type === 'audio/wav' || f.type === 'audio/x-wav';
+    if (isWav) { startWorker().postMessage({ type: 'wav', file: f }); return; }
+    try {
+      if (f.size > 600 * 1024 * 1024) throw new Error('Compressed files over 600 MB are too large to decode in the browser. Convert to WAV first.');
+      const ab = await f.arrayBuffer();
+      const ctx = new OfflineAudioContext(1, 1, 48000);
+      const audio = await ctx.decodeAudioData(ab);
+      const chans = []; for (let c = 0; c < audio.numberOfChannels; c++) chans.push(audio.getChannelData(c).slice());
+      S.h = { kind: 'decoded', fs: audio.sampleRate, ch: audio.numberOfChannels, bits: null, tag: 0, frames: audio.length, mask: 0 };
+      startWorker().postMessage({ type: 'pcm', chans, fs: audio.sampleRate }, chans.map(c => c.buffer));
+    } catch (err) {
+      $('prog-wrap').hidden = true;
+      showErr(err && err.message && !/decod/i.test(err.message) ? err.message : 'This file could not be decoded. Export a WAV from your editor or with ffmpeg and try again.');
+    }
+  }
+
+  // ---------- layouts ----------
+  const W51 = [1, 1, 1, 0, 1.41, 1.41];
+  function pad(n, start, w) { const a = new Array(n).fill(0); w.forEach((v, i) => { if (start + i < n) a[start + i] = v; }); return a; }
+  function layoutsFor(n, mask) {
+    const L = [];
+    const stereo = (s) => ({ key: 'st' + s, label: 'Stereo · ch ' + (s + 1) + '–' + (s + 2), weights: pad(n, s, [1, 1]), dialogue: [s, s + 1],
+      alts: [{ key: 'fold', label: 'Folded to mono', fold: s === 0, weights: pad(n, s, [1, 1]) }, { key: 'left', label: 'Left channel only', weights: pad(n, s, [1, 0]) }].filter(a => !('fold' in a) || a.fold) });
+    const s51 = (s) => ({ key: '51-' + s, label: '5.1 SMPTE/ITU · L R C LFE Ls Rs' + (n > 6 ? ' · ch ' + (s + 1) + '–' + (s + 6) : ''), weights: pad(n, s, W51), dialogue: [s + 2],
+      alts: [
+        { key: 'film', label: 'Read as Film order (L C R Ls Rs LFE)', weights: pad(n, s, [1, 1, 1, 1.41, 1.41, 0]), dialogue: [s + 1] },
+        { key: 'lfe', label: 'LFE wrongly included', weights: pad(n, s, [1, 1, 1, 1, 1.41, 1.41]) },
+        { key: 'surr', label: 'Surrounds without +1.5 dB', weights: pad(n, s, [1, 1, 1, 0, 1, 1]) }
+      ] });
+    const film = (s) => ({ key: 'film-' + s, label: '5.1 Film · L C R Ls Rs LFE' + (n > 6 ? ' · ch ' + (s + 1) + '–' + (s + 6) : ''), weights: pad(n, s, [1, 1, 1, 1.41, 1.41, 0]), dialogue: [s + 1],
+      alts: [{ key: 'smpte', label: 'Read as SMPTE order (L R C LFE Ls Rs)', weights: pad(n, s, W51), dialogue: [s + 2] }, { key: 'lfe', label: 'LFE wrongly included', weights: pad(n, s, [1, 1, 1, 1.41, 1.41, 1]) }] });
+    if (n === 1) L.push({ key: 'mono', label: 'Mono', weights: [1], dialogue: [0], alts: [{ key: 'dual', label: 'Measured as dual mono (+3 LU)', weights: [2] }] });
+    if (n >= 6) { L.push(s51(0), film(0)); }
+    if (n === 8) L.push({ key: '71', label: '7.1 · L R C LFE Lss Rss Lrs Rrs', weights: [1, 1, 1, 0, 1.41, 1.41, 1.41, 1.41], dialogue: [2], alts: [{ key: 'lfe', label: 'LFE wrongly included', weights: [1, 1, 1, 1, 1.41, 1.41, 1.41, 1.41] }] });
+    if (n >= 12) L.push(s51(6), film(6));
+    for (let s = 0; s + 1 < n; s += 2) L.push(stereo(s));
+    if (n >= 2 && n % 2) for (let c = 0; c < n; c++) L.push({ key: 'm' + c, label: 'Mono · ch ' + (c + 1), weights: pad(n, c, [1]), dialogue: [c], alts: [] });
+    // default: 5.1 when the channel mask says so or 6 ch; a 5.1+stereo stem in 8 ch defaults to the 5.1
+    let def = L[0];
+    if (n === 6 || n === 8 || n >= 12) def = L.find(l => l.key === '51-0');
+    if (n === 2) def = L.find(l => l.key === 'st0');
+    if (mask === 0x63F) def = L.find(l => l.key === '71') || def;
+    return { list: L, def };
+  }
+
+  // ---------- results ----------
+  function onLoaded() {
+    const h = S.h, raw = S.raw;
+    const { list, def } = layoutsFor(raw.nCh, h && h.mask || 0);
+    S.layouts = list;
+    const sel = $('layout');
+    sel.innerHTML = list.map(l => `<option value="${l.key}">${esc(l.label)}</option>`).join('');
+    sel.value = def.key; S.layout = def;
+    renderMeta();
+    recompute();
+    if (S.demo) { $('qc-value').value = '-23.6'; } else { $('qc-value').value = ''; }
+    renderMatch();
+  }
+  function recompute() {
+    const raw = S.raw, lay = S.layout;
+    S.res = GC.measure(raw, lay);
+    const v = [];
+    const add = (key, label, value, mode) => { if (fin(value)) v.push({ key, label, value, mode }); };
+    add('level', 'Level-gated (BS.1770-2+ / R128)', S.res.level, 'level');
+    add('dialogue', S.res.dialogueFallback ? 'Dialogue-gated (fell back to level)' : 'Dialogue-gated', S.res.dialogue, 'dialogue');
+    add('ungated', 'Ungated (BS.1770-1)', S.res.ungated, 'ungated');
+    for (const a of lay.alts || []) {
+      const r = GC.measure(raw, { weights: a.weights, dialogue: a.dialogue || [], fold: a.fold });
+      add(a.key + '.level', a.label + ', level-gated', r.level, 'level');
+      if (a.dialogue) add(a.key + '.dialogue', a.label + ', dialogue-gated', r.dialogue, 'dialogue');
+      add(a.key + '.ungated', a.label + ', ungated', r.ungated, 'ungated');
+    }
+    S.variants = v;
+    renderReadings(); renderSpecs(); drawTimeline(); renderMatch(); renderCalib(); renderCorrect();
+  }
+  function renderMeta() {
+    const h = S.h || {}, raw = S.raw;
+    const dur = raw.duration, hms = new Date(dur * 1000).toISOString().substr(11, 8);
+    const fmt = h.kind === 'decoded' ? 'Decoded audio' : h.kind === 'demo' ? 'Synthetic, 24-bit' : (h.tag === 3 ? h.bits + '-bit float' : h.bits + '-bit PCM') + ' WAV';
+    const rows = [
+      ['File', S.demo ? 'Example programme (dialogue scenes and music)' : S.file.name],
+      ['Format', fmt], ['Sample rate', (raw.fs / 1000) + ' kHz'], ['Channels', raw.nCh], ['Duration', hms]
+    ];
+    if (h.bext) rows.push(['BWF description', h.bext]);
+    $('meta').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('');
+    $('example-tag').hidden = !S.demo;
+  }
+  const SCALE = { lo: -36, hi: -12 };
+  const pos = v => Math.max(0, Math.min(100, (v - SCALE.lo) / (SCALE.hi - SCALE.lo) * 100));
+  function renderReadings() {
+    const r = S.res, sp = curSpec();
+    document.querySelectorAll('#bridge .track').forEach(t => {
+      const k = t.dataset.k, v = r[k];
+      t.querySelector('.fill').style.width = fin(v) ? pos(v) + '%' : '0';
+      const band = t.querySelector('.band'); band.style.left = pos(sp.target - sp.tol) + '%'; band.style.width = (pos(sp.target + sp.tol) - pos(sp.target - sp.tol)) + '%';
+      t.querySelector('.tgt').style.left = 'calc(' + pos(sp.target) + '% - 1px)';
+      t.querySelector('.val').innerHTML = fin(v) ? f1(v) + ' <small>LUFS</small>' : '—';
+      t.style.opacity = sp.mode === k ? '1' : '.82';
+    });
+    let ticks = ''; for (let x = SCALE.lo; x <= SCALE.hi; x += 4) ticks += `<span style="left:${pos(x)}%">${minus(String(x))}</span>`;
+    $('ruler').innerHTML = ticks;
+    const spread = r.level - r.dialogue, el = $('spread');
+    if (r.dialogueFallback) {
+      el.className = 'callout'; el.textContent = `Only ${r.speechPct.toFixed(0)}% of this programme was detected as dialogue, so the dialogue-gated reading falls back to level-gated, as most dialogue-gating QC tools do. Check the layout points the detector at the right channel.`;
+    } else if (fin(spread) && Math.abs(spread) >= 0.5) {
+      el.className = 'callout';
+      el.innerHTML = `Dialogue-gated reads <b>${Math.abs(spread).toFixed(1)} LU ${spread > 0 ? 'lower' : 'higher'}</b> than level-gated. A file corrected to target on one gate will ${spread > 0 ? 'read quiet' : 'read loud'} on the other, so a QC platform that gates on dialogue will judge it differently from a meter that does not. Dialogue was detected in ${r.speechPct.toFixed(0)}% of the programme.`;
+    } else {
+      el.className = 'callout ok';
+      el.textContent = `Level-gated and dialogue-gated readings agree within ${Math.abs(spread).toFixed(1)} LU, so the choice of gate is unlikely to decide QC on this file. Dialogue was detected in ${r.speechPct.toFixed(0)}% of the programme.`;
+    }
+    const st = [['True peak', f1(r.truePeak) + ' dBTP'], ['Sample peak', f1(r.samplePeak) + ' dBFS'], ['Loudness range', r.lra.toFixed(1) + ' LU'], ['Short-term max', f1(r.shortTermMax) + ' LUFS'], ['Momentary max', f1(r.momentaryMax) + ' LUFS']];
+    $('stats').innerHTML = st.map(([k, v]) => `<div class="stat"><span class="label">${k}</span><b>${v}</b></div>`).join('');
+  }
+  function verdict(sp) {
+    const v = S.res[sp.mode], tp = S.res.truePeak;
+    const off = v - sp.target, gain = sp.target - v;
+    const loudOk = Math.abs(off) <= sp.tol + 1e-9, tpOk = tp <= sp.tp + 1e-9;
+    return { v, off, gain, loudOk, tpOk, tpAfter: tp + gain };
+  }
+  function renderSpecs() {
+    if (!S.res) return;
+    $('specs').innerHTML = specs().map(sp => {
+      const d = verdict(sp), m = MODES[sp.mode];
+      let pill = '<span class="pill pass">Pass</span>';
+      if (!d.loudOk && !d.tpOk) pill = '<span class="pill fail">Loudness + peak</span>';
+      else if (!d.loudOk) pill = `<span class="pill fail">${d.off > 0 ? 'Too loud' : 'Too quiet'}</span>`;
+      else if (!d.tpOk) pill = '<span class="pill warn">Peak over</span>';
+      const custom = !BUILTIN.includes(sp);
+      return `<tr class="${sp.id === S.selSpec ? 'sel' : ''}">
+        <td><input type="radio" name="spec" id="spec-${esc(sp.id)}" value="${esc(sp.id)}" ${sp.id === S.selSpec ? 'checked' : ''} aria-label="Select ${esc(sp.name)}"></td>
+        <td class="specname"><label for="spec-${esc(sp.id)}">${esc(sp.name)}</label><small>${esc(sp.note || 'Custom spec')}</small></td>
+        <td><span class="mode"><i style="background:${m.color}"></i>${m.name}</span></td>
+        <td class="n">${f1(sp.target)} ±${sp.tol}</td>
+        <td class="n">${f1(d.v)}</td>
+        <td class="n">${sgn(d.off)} LU</td>
+        <td class="n">${f1(S.res.truePeak)} / ${f1(sp.tp)}</td>
+        <td>${pill}</td>
+        <td class="n">${sgn(d.gain)} dB</td>
+        <td>${custom ? `<button class="linkbtn" data-del="${esc(sp.id)}" type="button">Remove</button>` : ''}</td></tr>`;
+    }).join('');
+  }
+
+  // ---------- timeline ----------
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function drawTimeline() {
+    const cv = $('tl'), r = S.res; if (!r) return;
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const pl = 40, pr = 10, pt = 10, pb = 26, iw = W - pl - pr, ih = H - pt - pb;
+    const lo = -45, hi = -10, y = v => pt + ih * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+    const n = r.curve.length, dur = S.raw.duration, x = i => pl + (n > 1 ? i / (n - 1) : 0) * iw;
+    g.font = '11px ' + css('--font-data'); g.fillStyle = css('--muted'); g.strokeStyle = css('--rule'); g.lineWidth = 1;
+    for (let v = -40; v <= -10; v += 10) { g.beginPath(); g.moveTo(pl, y(v) + .5); g.lineTo(W - pr, y(v) + .5); g.stroke(); g.textAlign = 'right'; g.fillText(String(v).replace('-', '−'), pl - 6, y(v) + 4); }
+    // dialogue shading
+    g.fillStyle = css('--dlg'); g.globalAlpha = 0.16;
+    const dc = r.dlgCurve, dn = dc.length;
+    for (let i = 0; i < dn; i++) if (dc[i]) { const x0 = pl + i / dn * iw, x1 = pl + (i + 1) / dn * iw; g.fillRect(x0, pt, x1 - x0 + .5, ih); }
+    g.globalAlpha = 1;
+    // target
+    const sp = curSpec();
+    g.strokeStyle = css('--ink'); g.globalAlpha = .5; g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(pl, y(sp.target) + .5); g.lineTo(W - pr, y(sp.target) + .5); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+    // curve with soft area
+    const grad = g.createLinearGradient(0, pt, 0, pt + ih); const ac = css('--accent');
+    grad.addColorStop(0, ac + '55'); grad.addColorStop(1, ac + '00');
+    g.beginPath(); let started = false;
+    for (let i = 0; i < n; i++) { const v = r.curve[i]; if (!fin(v)) continue; if (!started) { g.moveTo(x(i), y(v)); started = true; } else g.lineTo(x(i), y(v)); }
+    if (started) {
+      g.strokeStyle = ac; g.lineWidth = 1.6; g.stroke();
+      g.lineTo(x(n - 1), pt + ih); g.lineTo(x(0), pt + ih); g.closePath(); g.fillStyle = grad; g.fill();
+    }
+    // time axis
+    g.fillStyle = css('--muted'); g.textAlign = 'center';
+    const steps = [10, 30, 60, 120, 300, 600, 900, 1800]; const step = steps.find(s => dur / s <= 8) || 3600;
+    for (let t = 0; t <= dur + 0.01; t += step) {
+      const px = pl + (dur ? t / dur : 0) * iw;
+      const lab = dur >= 3600 ? new Date(t * 1000).toISOString().substr(11, 5) : new Date(t * 1000).toISOString().substr(14, 5);
+      g.fillText(lab, Math.min(W - pr - 14, Math.max(pl + 14, px)), H - 8);
+    }
+  }
+
+  // ---------- QC match + calibration ----------
+  function renderMatch() {
+    const ul = $('matches'), q = parseFloat($('qc-value').value);
+    S.match = null;
+    if (!S.res || !fin(q)) { ul.innerHTML = '<li class="empty" style="border:none;display:block">Enter a reported value to see which method reproduces it.</li>'; $('match-verdict').textContent = ''; $('save-cal').disabled = true; $('cal-hint').textContent = ''; return; }
+    const ranked = S.variants.map(v => ({ ...v, d: q - v.value })).sort((a, b) => Math.abs(a.d) - Math.abs(b.d)).slice(0, 5);
+    S.match = { q, ranked, pick: ranked[0] };
+    ul.innerHTML = ranked.map((v, i) => `<li class="${i === 0 ? 'best' : ''}"><input type="radio" name="mpick" id="mp-${i}" value="${i}" ${i === 0 ? 'checked' : ''}>
+      <label for="mp-${i}">${esc(v.label)}</label><span class="num">${f1(v.value)}</span><span class="num" style="color:var(--muted)">${sgn(v.d)}</span></li>`).join('');
+    const b = ranked[0], close = Math.abs(b.d) <= 0.3;
+    $('match-verdict').innerHTML = close
+      ? `<b>${esc($('qc-platform').value || 'The platform')}</b> is measuring <b>${esc(b.label.toLowerCase())}</b> (within ${Math.abs(b.d).toFixed(1)} LU).`
+      : `No method matches within 0.3 LU. Closest is ${esc(b.label.toLowerCase())} at ${Math.abs(b.d).toFixed(1)} LU. Check the layout, or save it as a calibration offset.`;
+    $('save-cal').disabled = false;
+    $('cal-hint').textContent = 'Stores the offset for the checked method.';
+  }
+  function saveCal() {
+    const m = S.match; if (!m) return;
+    const i = +((document.querySelector('input[name="mpick"]:checked') || {}).value || 0), v = m.ranked[i];
+    const platform = ($('qc-platform').value || 'QC platform').trim();
+    S.calib.push({ platform, key: v.key, label: v.label, offset: m.q - v.value, file: S.demo ? 'Example programme' : S.file.name, at: new Date().toISOString().slice(0, 10) });
+    store.set('gc.calib', S.calib); renderCalib(); toast('Saved calibration for ' + platform);
+  }
+  function renderCalib() {
+    const el = $('calib');
+    if (!S.calib.length) { el.innerHTML = '<p class="empty">No calibrations yet. Match a QC report on the left and save it; the offset and a prediction for the current file appear here.</p>'; return; }
+    const groups = {};
+    S.calib.forEach((c, i) => { const k = c.platform + '|' + c.key; (groups[k] = groups[k] || { platform: c.platform, key: c.key, label: c.label, items: [] }).items.push({ ...c, i }); });
+    el.innerHTML = '<div class="tbl-scroll"><table><thead><tr><th>Platform</th><th>Method</th><th class="n">Offset</th><th class="n">Files</th><th class="n">Predicted here</th><th></th></tr></thead><tbody>' +
+      Object.values(groups).map(g => {
+        const offs = g.items.map(x => x.offset), mean = offs.reduce((a, b) => a + b, 0) / offs.length;
+        const spread = Math.max(...offs) - Math.min(...offs);
+        const v = S.variants.find(x => x.key === g.key);
+        return `<tr><td>${esc(g.platform)}</td><td>${esc(g.label)}</td><td class="n">${sgn(mean)}${offs.length > 1 ? ` <small style="color:var(--muted)">±${(spread / 2).toFixed(1)}</small>` : ''}</td>
+          <td class="n">${offs.length}</td><td class="n"><b>${v ? f1(v.value + mean) + ' LUFS' : '—'}</b></td>
+          <td><button class="linkbtn" data-delcal="${esc(g.platform + '|' + g.key)}" type="button">Clear</button></td></tr>`;
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // ---------- correction ----------
+  function renderCorrect() {
+    if (!S.res) return;
+    const sp = curSpec(), d = verdict(sp), el = $('correct');
+    const over = d.tpAfter - sp.tp;
+    el.innerHTML = `<dl class="meta" style="margin:0">
+      <dt>Spec</dt><dd>${esc(sp.name)} · ${MODES[sp.mode].name.toLowerCase()} ${f1(sp.target)} LUFS</dd>
+      <dt>Measured</dt><dd>${f1(d.v)} LUFS</dd>
+      <dt>Gain</dt><dd><b style="font-size:1.05rem">${sgn(d.gain)} dB</b></dd>
+      <dt>True peak after</dt><dd>${f1(d.tpAfter)} dBTP ${over > 0 ? `<span class="pill fail">${over.toFixed(1)} dB over ${f1(sp.tp)}</span>` : '<span class="pill pass">Within limit</span>'}</dd></dl>
+      ${over > 0 ? '<p class="fine" style="margin:10px 0 0">Gain alone will break the peak limit. Run the corrected copy through a true-peak limiter (for example in LM-Correct or a ceiling-set limiter) before delivery.</p>' : ''}
+      ${Math.abs(d.gain) < 0.05 ? '<p class="fine" style="margin:10px 0 0">Already on target. No change needed.</p>' : ''}`;
+    const canSave = !S.demo && S.h && S.h.kind === 'wav' && S.file && S.file.size < 2 * 1024 * 1024 * 1024;
+    $('save-wav').disabled = !canSave || Math.abs(d.gain) < 0.05;
+    $('save-note').textContent = S.demo ? 'Load your own WAV to save a corrected copy.' :
+      (S.h && S.h.kind !== 'wav') ? 'Corrected copies are available for WAV sources only.' :
+      (S.file && S.file.size >= 2 * 1024 * 1024 * 1024) ? 'Files over 2 GB: apply the gain in your editor or LM-Correct.' : 'Same format and metadata as the source; only the gain changes.';
+  }
+  async function saveWav() {
+    const sp = curSpec(), d = verdict(sp);
+    const dl = await getSaver();
+    if (!dl) { toast('Saving files is not available in this view'); return; }
+    const base = S.file.name.replace(/\.[^.]+$/, ''), name = `${base}_${sp.name.replace(/[^A-Za-z0-9]+/g, '-')}_${d.gain >= 0 ? 'p' : 'm'}${Math.abs(d.gain).toFixed(1)}dB.wav`;
+    busy('Writing corrected copy…');
+    onCorrected = async (m) => {
+      if (m.clips) toast(m.clips + ' samples clipped. Use a limiter on the corrected copy.');
+      try { await dl.save({ filename: name.replace(/\.wav$/, '.zip'), data: m.blob }); toast('Saved ' + name); }
+      catch (e) { if (e && e.code !== 'declined') toast('Could not save: ' + (e.message || e.code)); }
+    };
+    worker.postMessage({ type: 'correct', file: S.file, h: S.h, gainDb: d.gain, name });
+  }
+  async function saveCsv() {
+    if (!S.res) return;
+    const r = S.res, q = v => '"' + String(v).replace(/"/g, '""') + '"', n = v => fin(v) ? v.toFixed(2) : '';
+    const rows = [['Gatecheck report'], ['File', S.demo ? 'Example programme (synthetic)' : S.file.name], ['Layout', S.layout.label], ['Duration (s)', S.raw.duration.toFixed(2)], [],
+      ['Measurement', 'Value', 'Unit'], ['Level-gated (BS.1770-2+ / EBU R128)', n(r.level), 'LUFS'], ['Dialogue-gated (Gatecheck v1)', n(r.dialogue), 'LUFS'], ['Dialogue detected', n(r.speechPct), '%'],
+      ['Ungated (BS.1770-1)', n(r.ungated), 'LUFS'], ['True peak', n(r.truePeak), 'dBTP'], ['Sample peak', n(r.samplePeak), 'dBFS'], ['Loudness range', n(r.lra), 'LU'], ['Short-term max', n(r.shortTermMax), 'LUFS'], ['Momentary max', n(r.momentaryMax), 'LUFS'], [],
+      ['Alternative readings'], ...S.variants.map(v => [v.label, n(v.value), 'LUFS']), [],
+      ['Spec', 'Gate', 'Target', 'Tolerance', 'Measured', 'Off by (LU)', 'Max dBTP', 'Loudness', 'Peak', 'Gain to target (dB)'],
+      ...specs().map(sp => { const d = verdict(sp); return [sp.name, MODES[sp.mode].name, sp.target, sp.tol, n(d.v), n(d.off), sp.tp, d.loudOk ? 'Pass' : 'Fail', d.tpOk ? 'Pass' : 'Fail', n(d.gain)]; })];
+    if (S.match) rows.push([], ['QC report', $('qc-platform').value, n(S.match.q)], ['Best match', S.match.ranked[0].label, n(S.match.ranked[0].value), 'difference ' + n(S.match.ranked[0].d)]);
+    const csv = rows.map(r => r.map(q).join(',')).join('\r\n');
+    const dl = await getSaver();
+    if (!dl) { toast('Saving files is not available in this view'); return; }
+    try { await dl.save({ filename: 'gatecheck_' + (S.demo ? 'example' : S.file.name.replace(/\.[^.]+$/, '')) + '.csv', data: csv }); toast('Report saved'); }
+    catch (e) { if (e && e.code !== 'declined') toast('Could not save: ' + (e.message || e.code)); }
+  }
+  async function claudeUse(name) { try { return window.claude && window.claude.use ? await window.claude.use(name) : null; } catch (e) { return null; } }
+  // Works inside Claude (downloads capability) and on a normal website (plain browser download).
+  function browserSave(filename, data) {
+    const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return { status: 'saved' };
+  }
+  async function getSaver() { const d = await claudeUse('downloads'); return d || (window.claude ? null : { save: ({ filename, data }) => browserSave(filename, data) }); }
+
+  // ---------- events ----------
+  $('pick').onclick = () => $('file').click();
+  $('file').onchange = e => loadFile(e.target.files[0]);
+  $('demo').onclick = loadDemo;
+  const dz = $('drop');
+  ['dragenter', 'dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
+  dz.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+  $('layout').onchange = e => { S.layout = S.layouts.find(l => l.key === e.target.value); recompute(); };
+  $('specs').addEventListener('change', e => { if (e.target.name === 'spec') { S.selSpec = e.target.value; store.set('gc.sel', S.selSpec); renderSpecs(); renderReadings(); drawTimeline(); renderCorrect(); } });
+  $('specs').addEventListener('click', e => { const id = e.target.dataset && e.target.dataset.del; if (!id) return; S.custom = S.custom.filter(s => s.id !== id); if (S.selSpec === id) S.selSpec = 'r128'; store.set('gc.specs', S.custom); renderSpecs(); renderReadings(); drawTimeline(); renderCorrect(); });
+  $('addspec').addEventListener('submit', e => {
+    e.preventDefault();
+    const sp = { id: 'c' + Date.now(), name: $('sp-name').value.trim(), note: 'Custom spec', mode: $('sp-mode').value, target: +$('sp-target').value, tol: Math.abs(+$('sp-tol').value), tp: +$('sp-tp').value };
+    if (!sp.name) return;
+    S.custom.push(sp); S.selSpec = sp.id; store.set('gc.specs', S.custom); store.set('gc.sel', sp.id);
+    $('sp-name').value = ''; renderSpecs(); renderReadings(); drawTimeline(); renderCorrect(); toast('Added ' + sp.name);
+  });
+  $('qc-value').addEventListener('input', renderMatch);
+  $('qc-platform').addEventListener('input', renderMatch);
+  $('save-cal').onclick = saveCal;
+  $('calib').addEventListener('click', e => { const k = e.target.dataset && e.target.dataset.delcal; if (!k) return; S.calib = S.calib.filter(c => c.platform + '|' + c.key !== k); store.set('gc.calib', S.calib); renderCalib(); });
+  $('save-wav').onclick = saveWav;
+  $('save-csv').onclick = saveCsv;
+  $('copy-gain').onclick = async () => {
+    if (!S.res) return; const g = verdict(curSpec()).gain.toFixed(1);
+    try { await navigator.clipboard.writeText(g); toast('Copied ' + g + ' dB'); } catch (e) { toast('Gain: ' + g + ' dB'); }
+  };
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(drawTimeline, 120); });
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawTimeline); } catch (e) { /* older browsers */ }
+  new MutationObserver(drawTimeline).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  if (!window.claude && /github\.io$|^localhost$/.test(location.hostname)) { $('home-link').hidden = false; $('home-plain').hidden = true; }
+  renderCalib();
+  loadDemo();
+})();
+</script>
+</body></html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gatecheck</title>
+<meta name="description" content="Free loudness pre-flight for post-production. Measure masters level-gated, dialogue-gated and ungated, check delivery specs and fix them before QC.">
+<meta property="og:title" content="Gatecheck: your meter says −23, QC says fail">
+<meta property="og:description" content="Free loudness pre-flight. See the number your QC platform will see before you deliver.">
+<meta property="og:image" content="https://alexandremarquesricardo-star.github.io/gatecheck-site/assets/og.png">
+<meta property="og:url" content="https://alexandremarquesricardo-star.github.io/gatecheck-site/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one long page, a meter bridge as the hero. Sections alternate panel/ground. */
+:root {
+  --bg: #eceff2; --panel: #fbfcfd; --ink: #142029; --muted: #56636e; --rule: #cdd4da; --track: #dde3e8;
+  --accent: #b86a00; --dlg: #0b7480; --ungated: #6b5aa6;
+  --pass: #1d7f47; --fail: #b8322a; --pass-bg: #e0f0e6; --fail-bg: #f7e1df;
+  --band: rgba(184,106,0,.14); --hero: #0f151a; --hero-ink: #e6ecf0; --hero-muted: #93a0ab; --hero-track: #222c34;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0e1317; --panel: #151c22; --ink: #e3e9ee; --muted: #94a1ac; --rule: #2a343d; --track: #222c34;
+  --accent: #f0a23a; --dlg: #3fc3cf; --ungated: #a998e8; --pass: #5cc98a; --fail: #ff8a7f; --pass-bg: #163325; --fail-bg: #3a1c1a;
+  --band: rgba(240,162,58,.16); --hero: #0a0e11; color-scheme: dark; } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--font-body); }
+.in { max-width: 1120px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; line-height: 1.05; }
+h2 { font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+h3 { font-size: 1.35rem; font-weight: 600; letter-spacing: .01em; }
+p { margin: 0; }
+a { color: inherit; }
+.eyebrow { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .14em; font-size: .85rem; font-weight: 600; color: var(--accent); }
+.lede { color: var(--muted); max-width: 62ch; font-size: 1.08rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* nav */
+.nav { background: var(--hero); color: var(--hero-ink); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; border-bottom: 1px solid #1e272e; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); background: var(--hero); z-index: 11; }
+.nav .in { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; letter-spacing: .06em; }
+.brand b { color: #f0a23a; font-weight: 700; }
+.nav ul { display: flex; gap: 22px; list-style: none; margin: 0; padding: 0; font-size: .92rem; }
+.nav ul a { text-decoration: none; color: var(--hero-muted); }
+.nav ul a:hover { color: var(--hero-ink); }
+@media (max-width: 760px) { .nav ul { display: none; } }
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 4px; padding: 11px 18px; font-weight: 600; font-size: .95rem; text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+.btn.primary { background: #f0a23a; color: #10161b; }
+.btn.primary:hover { background: #f5b55c; }
+.btn.line { border-color: #3a4651; color: var(--hero-ink); }
+.btn.line:hover { border-color: var(--hero-ink); }
+.btn.small { padding: 7px 13px; font-size: .88rem; }
+
+/* hero */
+.hero { background: var(--hero); color: var(--hero-ink); padding-block: 64px 72px; }
+.hero .in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; align-items: center; }
+@media (max-width: 920px) { .hero .in { grid-template-columns: minmax(0, 1fr); gap: 40px; } }
+.hero h1 { font-size: clamp(2.9rem, 6.4vw, 5rem); font-weight: 800; text-transform: uppercase; letter-spacing: .01em; margin: 14px 0 20px; }
+.hero h1 em { font-style: normal; color: #ff8a7f; }
+.hero h1 .num { font-family: var(--font-display); color: #f0a23a; }
+.hero .lede { color: var(--hero-muted); }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.fine { font-size: .85rem; color: var(--hero-muted); margin-top: 14px; }
+
+.bridge { background: #121a20; border: 1px solid #222c34; border-radius: 8px; padding: 22px 22px 18px; min-width: 0; }
+.bridge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.bridge-head h3 { font-size: 1.15rem; text-transform: uppercase; letter-spacing: .08em; color: var(--hero-ink); }
+.bridge-head span { font-family: var(--font-data); font-size: .78rem; color: var(--hero-muted); }
+.trk { display: grid; grid-template-columns: 128px minmax(0, 1fr) 82px; gap: 12px; align-items: center; padding-block: 9px; border-top: 1px solid #1e272e; }
+.trk .lbl b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; letter-spacing: .02em; }
+.trk .lbl small { color: var(--hero-muted); font-size: .76rem; line-height: 1.3; display: block; }
+.bar { position: relative; height: 22px; background: var(--hero-track); border-radius: 3px; overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; transition: width 1.4s cubic-bezier(.2,.7,.2,1); }
+.bar .band { position: absolute; top: 0; bottom: 0; background: rgba(240,162,58,.16); border-inline: 1px dashed #f0a23a; }
+.bar .tgt { position: absolute; top: 0; bottom: 0; width: 2px; background: #e6ecf0; opacity: .7; }
+.trk .v { font-family: var(--font-data); font-weight: 600; text-align: right; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.verdicts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.vd { border-radius: 5px; padding: 10px 12px; font-size: .88rem; line-height: 1.35; }
+.vd b { display: block; font-family: var(--font-display); font-size: 1.05rem; letter-spacing: .03em; }
+.vd.ok { background: #163325; color: #9fe0bb; }
+.vd.no { background: #3a1c1a; color: #ffb3aa; }
+.ruler { position: relative; height: 18px; margin-left: 140px; margin-right: 94px; font-family: var(--font-data); font-size: .68rem; color: var(--hero-muted); }
+.ruler span { position: absolute; top: 2px; transform: translateX(-50%); }
+@media (max-width: 520px) {
+  .trk { grid-template-columns: minmax(0, 1fr) auto; }
+  .trk .bar { grid-column: 1 / -1; grid-row: 2; }
+  .ruler { margin: 0; }
+  .verdicts { grid-template-columns: minmax(0, 1fr); }
+}
+
+section { padding-block: 84px; }
+section.alt { background: var(--panel); border-block: 1px solid var(--rule); }
+.head { display: flex; flex-direction: column; gap: 14px; margin-bottom: 40px; }
+
+/* gates */
+.gates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 2px solid var(--ink); }
+.gate { padding: 22px 24px 4px 0; display: flex; flex-direction: column; gap: 10px; }
+.gate + .gate { padding-left: 24px; border-left: 1px solid var(--rule); }
+.gate .sw { width: 36px; height: 6px; border-radius: 3px; }
+.gate p { color: var(--muted); font-size: .97rem; }
+.gate .who { font-family: var(--font-data); font-size: .8rem; color: var(--ink); }
+@media (max-width: 820px) { .gates { grid-template-columns: minmax(0, 1fr); } .gate + .gate { padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); } }
+.pull { margin-top: 40px; font-family: var(--font-display); font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 600; line-height: 1.2; max-width: 30ch; }
+.pull span { color: var(--accent); }
+
+/* steps */
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; counter-reset: s; }
+.step { display: flex; flex-direction: column; gap: 10px; }
+.step::before { counter-increment: s; content: counter(s); font-family: var(--font-display); font-weight: 800; font-size: 3.2rem; line-height: 1; color: var(--accent); }
+.step p { color: var(--muted); }
+.editors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.editors span { font-size: .8rem; border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; color: var(--ink); }
+@media (max-width: 820px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+
+/* features */
+.feats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+.feat { padding: 26px 28px 26px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 8px; }
+.feat:nth-child(even) { padding-left: 28px; border-left: 1px solid var(--rule); }
+.feat p { color: var(--muted); }
+.feat code, .mono { font-family: var(--font-data); font-size: .86em; }
+@media (max-width: 820px) { .feats { grid-template-columns: minmax(0, 1fr); } .feat:nth-child(even) { padding-left: 0; border-left: 0; } }
+
+/* downloads */
+.dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+.card.me { border-color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+.card p { color: var(--muted); font-size: .9rem; flex: 1; }
+.card .btn { justify-content: center; background: var(--ink); color: var(--panel); margin-top: 6px; }
+.card .btn:hover { opacity: .9; }
+.card small { color: var(--muted); font-size: .78rem; }
+@media (max-width: 920px) { .dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .dl { grid-template-columns: minmax(0, 1fr); } }
+
+/* accuracy */
+.acc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 48px; align-items: start; }
+@media (max-width: 860px) { .acc { grid-template-columns: minmax(0, 1fr); } }
+.acc p { color: var(--muted); }
+.tbl { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th { text-align: left; font-family: var(--font-display); text-transform: uppercase; letter-spacing: .08em; font-size: .78rem; color: var(--muted); padding: 8px 10px; border-bottom: 2px solid var(--ink); font-weight: 600; }
+td { padding: 10px; border-bottom: 1px solid var(--rule); }
+td.n, th.n { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ok { color: var(--pass); font-weight: 600; }
+
+/* faq */
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; }
+@media (max-width: 820px) { .faq { grid-template-columns: minmax(0, 1fr); } }
+details { border-top: 1px solid var(--rule); padding: 16px 0; }
+summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::after { content: "+"; font-family: var(--font-data); color: var(--accent); }
+details[open] summary::after { content: "−"; }
+details p { color: var(--muted); margin-top: 10px; max-width: 60ch; }
+
+/* pro + footer */
+.pro { background: var(--hero); color: var(--hero-ink); }
+.pro .in { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 48px; align-items: center; }
+@media (max-width: 860px) { .pro .in { grid-template-columns: minmax(0, 1fr); } }
+.pro .lede { color: var(--hero-muted); }
+.pro ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.pro li { padding-left: 20px; position: relative; color: var(--hero-ink); }
+.pro li::before { content: ""; position: absolute; left: 0; top: .65em; width: 10px; height: 3px; background: #f0a23a; border-radius: 2px; }
+footer { padding-block: 36px 48px; color: var(--muted); font-size: .86rem; }
+footer .in { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+footer a { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .bar i { transition: none; } }
+</style>
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <div class="in">
+    <a class="brand" href="#top" aria-label="Gatecheck home">
+      <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="60" height="60" rx="14" fill="#1a232a"/><rect x="12" y="17" width="40" height="7" rx="3.5" fill="#222c34"/><rect x="12" y="17" width="33" height="7" rx="3.5" fill="#f0a23a"/><rect x="12" y="28.5" width="40" height="7" rx="3.5" fill="#222c34"/><rect x="12" y="28.5" width="24" height="7" rx="3.5" fill="#3fc3cf"/><rect x="12" y="40" width="40" height="7" rx="3.5" fill="#222c34"/><rect x="12" y="40" width="30" height="7" rx="3.5" fill="#a998e8"/><rect x="38" y="13" width="2" height="38" fill="#e6ecf0"/></svg>
+      <span>GATE<b>CHECK</b></span>
+    </a>
+    <ul>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#workflow">Workflow</a></li>
+      <li><a href="#download">Download</a></li>
+      <li><a href="#accuracy">Accuracy</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <a class="btn primary small" href="app/">Open in browser</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="in">
+    <div>
+      <div class="eyebrow">Free loudness pre-flight for post-production</div>
+      <h1>Your meter says <span class="num">−23</span>. QC says <em>fail</em>.</h1>
+      <p class="lede">Gatecheck measures your master three ways, level-gated, dialogue-gated and ungated, so you see the number your QC platform will see before you deliver.</p>
+      <div class="ctas">
+        <a class="btn primary" href="app/">Open in your browser</a>
+        <a class="btn line" href="#download" id="hero-dl">Download the desktop app</a>
+      </div>
+      <p class="fine">Free. Your audio never leaves your machine. macOS, Windows and Linux.</p>
+    </div>
+    <div class="bridge" role="img" aria-label="One master measured three ways: level-gated minus 23.0 LUFS passes, dialogue-gated minus 24.7 LUFS fails a dialogue-gated QC template, ungated minus 23.4 LUFS.">
+      <div class="bridge-head"><h3>Same master. Three gates.</h3><span>target −23 ±0.5 LUFS</span></div>
+      <div class="trk"><div class="lbl"><b style="color:#f0a23a">Level-gated</b><small>EBU R128 / BS.1770-2+</small></div><div class="bar"><i data-v="-23.0" style="background:#f0a23a"></i><div class="band"></div><div class="tgt"></div></div><div class="v">−23.0</div></div>
+      <div class="trk"><div class="lbl"><b style="color:#3fc3cf">Dialogue-gated</b><small>Speech only</small></div><div class="bar"><i data-v="-24.7" style="background:#3fc3cf"></i><div class="band"></div><div class="tgt"></div></div><div class="v">−24.7</div></div>
+      <div class="trk"><div class="lbl"><b style="color:#a998e8">Ungated</b><small>BS.1770-1</small></div><div class="bar"><i data-v="-23.4" style="background:#a998e8"></i><div class="band"></div><div class="tgt"></div></div><div class="v">−23.4</div></div>
+      <div class="ruler" id="ruler"></div>
+      <div class="verdicts">
+        <div class="vd ok"><b>Your R128 meter: Pass</b>Corrected to −23.0 in the suite.</div>
+        <div class="vd no"><b>Dialogue-gated QC: Fail</b>1.7 LU quiet. Bounced back.</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">The problem</div>
+      <h2>One standard, three ways to gate it</h2>
+      <p class="lede">ITU-R BS.1770 defines how to weight and sum the channels. What it counts depends on the gate, and the meter in your edit suite and the QC platform downstream don't always use the same one. On music-heavy, dialogue-light programmes the readings can sit well over a loudness unit apart.</p>
+    </div>
+    <div class="gates">
+      <div class="gate"><div class="sw" style="background:var(--accent)"></div><h3>Level-gated</h3><p>Ignores blocks below −70 LUFS, then anything 10 LU under the programme average. The EBU R128 and BS.1770-2+ reading most meters show.</p><div class="who">Most edit-suite meters, EBU R128</div></div>
+      <div class="gate"><div class="sw" style="background:var(--dlg)"></div><h3>Dialogue-gated</h3><p>Only counts the parts where someone is speaking. Music beds, montages and effects drop out, so a programme that's loud between scenes reads quieter.</p><div class="who">Dialogue-anchored specs, some QC templates</div></div>
+      <div class="gate"><div class="sw" style="background:var(--ungated)"></div><h3>Ungated</h3><p>Averages the whole programme above silence. The original BS.1770-1 method, still found in older tools and presets.</p><div class="who">BS.1770-1 presets, legacy tools</div></div>
+    </div>
+    <p class="pull">Correct to −23 on one gate, deliver to a platform that measures another, and the file <span>comes back</span>.</p>
+  </div>
+</section>
+
+<section class="alt" id="workflow">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">How it fits</div>
+      <h2>Point it at your export folder</h2>
+      <p class="lede">No plugin to install and nothing to change in your edit. Gatecheck watches the folder you already export to.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><h3>Choose a watch folder</h3><p>Pick the folder your mixdowns land in, and the delivery spec you're working to.</p></div>
+      <div class="step"><h3>Export the mix as usual</h3><p>As soon as the file finishes writing, Gatecheck measures it. WAV, BWF, RF64, AIFF and FLAC, mono to 16 channels.</p>
+        <div class="editors"><span>Premiere Pro</span><span>Media Composer</span><span>DaVinci Resolve</span><span>Pro Tools</span></div></div>
+      <div class="step"><h3>Read the verdict</h3><p>All three readings, pass or fail against the spec's own gate, the gain to hit target, and a CSV report saved next to the file.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">What it does</div>
+      <h2>Built for the bounce-back</h2>
+    </div>
+    <div class="feats">
+      <div class="feat"><h3>Specs checked with their own gate</h3><p>EBU R128, ATSC A/85, Netflix, ARIB TR-B32 and OP-59 built in, plus your own. A dialogue-anchored spec is checked dialogue-gated, a broadcast spec level-gated.</p></div>
+      <div class="feat"><h3>Match a QC report</h3><p>Type in the number your QC platform reported. Gatecheck finds the method that reproduces it, including Film-order 5.1 read as SMPTE and LFE wrongly included.</p></div>
+      <div class="feat"><h3>Correct to spec</h3><p>A gain-corrected copy in the same format, with BWF metadata intact. True peak is checked after the gain, so you know when a limiter is needed.</p></div>
+      <div class="feat"><h3>Command line for render farms</h3><p><code>gatecheck-cli master.wav --spec r128</code> prints JSON and exits non-zero on a fail. Drop it into a pipeline or a QC script.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="download">
+  <div class="in">
+    <div class="head">
+      <div class="eyebrow">Download</div>
+      <h2>Free on every platform</h2>
+      <p class="lede">The desktop app adds the watch folder and handles masters of any size. The browser version needs no install.</p>
+    </div>
+    <div class="dl">
+      <div class="card" data-os="mac"><h3>macOS</h3><p>Universal app for Apple Silicon and Intel. macOS 11 or later.</p><a class="btn" data-asset="Gatecheck-macOS.zip" href="#">Download for Mac</a></div>
+      <div class="card" data-os="win"><h3>Windows</h3><p>Windows 10 and 11, 64-bit. First launch: More info, then Run anyway.</p><a class="btn" data-asset="Gatecheck-Windows.zip" href="#">Download for Windows</a></div>
+      <div class="card" data-os="linux"><h3>Linux</h3><p>AppImage for most distributions. Make it executable and run.</p><a class="btn" data-asset="Gatecheck-x86_64.AppImage" href="#">Download AppImage</a></div>
+      <div class="card"><h3>Browser</h3><p>Nothing to install. Includes QC report matching and calibration.</p><a class="btn" href="app/">Open in browser</a></div>
+    </div>
+    <p style="margin-top:18px;color:var(--muted);font-size:.9rem">Command-line tool and older versions: <a id="releases-link" href="#">all releases</a>.</p>
+  </div>
+</section>
+
+<section id="accuracy">
+  <div class="in acc">
+    <div class="head" style="margin:0">
+      <div class="eyebrow">Accuracy</div>
+      <h2>Tested against the reference signals</h2>
+      <p>Every build runs the EBU Tech 3341 test cases on macOS, Windows and Linux before it ships. Level-gated readings, true peak and loudness range also match FFmpeg's EBU R128 meter on programme material.</p>
+      <p>The dialogue detector is Gatecheck's own. Commercial detectors differ, so a dialogue-gated reading can sit a few tenths of a unit from your QC platform's. The browser version learns that offset from your QC reports.</p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Reference case</th><th class="n">Expected</th><th class="n">Gatecheck</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Stereo 1 kHz, −23 dBFS</td><td class="n">−23.0</td><td class="n">−23.0</td><td class="ok">Pass</td></tr>
+          <tr><td>Stereo 1 kHz, −33 dBFS</td><td class="n">−33.0</td><td class="n">−33.0</td><td class="ok">Pass</td></tr>
+          <tr><td>Relative gate</td><td class="n">−23.0</td><td class="n">−23.0</td><td class="ok">Pass</td></tr>
+          <tr><td>Absolute and relative gate</td><td class="n">−23.0</td><td class="n">−23.0</td><td class="ok">Pass</td></tr>
+          <tr><td>5.1 channel weighting</td><td class="n">−23.0</td><td class="n">−23.0</td><td class="ok">Pass</td></tr>
+          <tr><td>True peak, inter-sample</td><td class="n">−6.0 dBTP</td><td class="n">−6.0 dBTP</td><td class="ok">Pass</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="faq">
+  <div class="in">
+    <div class="head"><div class="eyebrow">FAQ</div><h2>Questions</h2></div>
+    <div class="faq">
+      <div>
+        <details><summary>Is it really free?</summary><p>Yes. The app, the browser version and the command-line tool are free to use, including commercially.</p></details>
+        <details><summary>Does my audio get uploaded anywhere?</summary><p>No. The desktop app works offline, and the browser version measures the file inside your browser. Nothing is sent to a server.</p></details>
+        <details><summary>Which files can it open?</summary><p>WAV, BWF and RF64 (PCM or float, over 4 GB included), AIFF and FLAC in the desktop app. For MXF or MOV masters, export the mix as WAV first.</p></details>
+      </div>
+      <div>
+        <details><summary>Is the dialogue gate the same as Dolby Dialogue Intelligence?</summary><p>No. Gatecheck uses its own speech detector, so readings can differ slightly from a platform that uses Dolby's. Match a few QC reports in the browser version to learn the offset.</p></details>
+        <details><summary>Does it replace my QC platform?</summary><p>No. It tells you, before delivery, what your QC platform is likely to report and why, so fewer files come back.</p></details>
+        <details><summary>Will it plug into my editor?</summary><p>Today it works alongside any editor through the watch folder. A Premiere Pro panel and a Media Composer AudioSuite plugin are planned.</p></details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="pro" id="pro">
+  <div class="in">
+    <div>
+      <div class="eyebrow">Coming next</div>
+      <h2 style="margin:14px 0 16px">Gatecheck for teams</h2>
+      <p class="lede">For post houses and broadcasters delivering at volume. The core tool stays free.</p>
+      <div class="ctas" id="waitlist-wrap"><a class="btn primary" id="waitlist" href="#">Join the waitlist</a></div>
+    </div>
+    <ul>
+      <li>Shared QC calibrations across every suite</li>
+      <li>Your house delivery specs, managed centrally</li>
+      <li>Batch reports for a whole delivery, ready for the QC log</li>
+      <li>Premiere Pro and Media Composer integration</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="in">
+    <span>Gatecheck. Built by a post-production engineer. Not affiliated with the EBU, Dolby, Adobe, Avid or any QC vendor.</span>
+    <span><a id="source-link" href="#">Releases</a></span>
+  </div>
+</footer>
+
+<script>
+// Site settings: change these when the repo or waitlist moves.
+const CONFIG = {
+  releasesRepo: 'alexandremarquesricardo-star/gatecheck-site',  // filled in by the Website workflow
+  waitlistUrl: ''   // e.g. a free Tally or Google Form; the waitlist button hides while this is empty
+};
+(function () {
+  if (CONFIG.releasesRepo.startsWith('__')) CONFIG.releasesRepo = 'alexandremarquesricardo-star/gatecheck-site';
+  const base = 'https://github.com/' + CONFIG.releasesRepo + '/releases';
+  document.querySelectorAll('[data-asset]').forEach(a => { a.href = base + '/latest/download/' + a.dataset.asset; });
+  document.getElementById('releases-link').href = base;
+  document.getElementById('source-link').href = base;
+  const w = document.getElementById('waitlist');
+  if (CONFIG.waitlistUrl) w.href = CONFIG.waitlistUrl; else document.getElementById('waitlist-wrap').hidden = true;
+
+  // highlight the visitor's platform
+  const ua = navigator.userAgent, os = /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'win' : /Linux/.test(ua) && !/Android/.test(ua) ? 'linux' : null;
+  if (os) {
+    const card = document.querySelector('.card[data-os="' + os + '"]');
+    card.classList.add('me');
+    const hero = document.getElementById('hero-dl');
+    hero.textContent = 'Download for ' + { mac: 'Mac', win: 'Windows', linux: 'Linux' }[os];
+    hero.href = card.querySelector('a').href;
+  }
+
+  // meter bridge: shared scale −32 … −16 LUFS, target −23 ±0.5
+  const lo = -32, hi = -16, pos = v => ((v - lo) / (hi - lo) * 100) + '%';
+  document.querySelectorAll('.bridge .bar').forEach(b => {
+    const band = b.querySelector('.band'); band.style.left = pos(-23.5); band.style.width = (1 / (hi - lo) * 100) + '%';
+    b.querySelector('.tgt').style.left = 'calc(' + pos(-23) + ' - 1px)';
+  });
+  let r = ''; for (let x = lo; x <= hi; x += 4) r += '<span style="left:' + pos(x) + '">' + String(x).replace('-', '−') + '</span>';
+  document.getElementById('ruler').innerHTML = r;
+  const fill = () => document.querySelectorAll('.bridge .bar i').forEach(i => { i.style.width = pos(parseFloat(i.dataset.v)); });
+  requestAnimationFrame(() => requestAnimationFrame(fill));
+})();
+</script>
+</body>
+</html>
