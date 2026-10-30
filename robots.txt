@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://alexandremarquesricardo-star.github.io/gatecheck-site/sitemap.xml
